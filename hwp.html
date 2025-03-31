@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>hwp 보기</title>
+  <style>
+    body {background-color:#181818; color:#888888;}
+    pre {
+        white-space: break-spaces;
+     /* white-space: pre-wrap; */
+    }
+  </style>
+  <script src="kssmcode.js?v=<?=filemtime('kssmcode.js')?>"></script>
+  <!-- <script src="jszip.min.js?v=<?=filemtime('jszip.min.js')?>"></script> -->
+  <!-- <script src="jszip.js?v=<?=filemtime('jszip.js')?>"></script> -->
+  <script src="pako.js?v=<?=filemtime('pako.js')?>"></script>
+  <script>
+    var params = URLSearchParams && new URLSearchParams(document.location.search.substring(1));
+    var url = params && params.get("url") && decodeURIComponent(params.get("url"));
+
+    function HWP(buffer){
+        var getByte = new GetByte(buffer);
+        //HWP.getByte = getByte;
+        //var charbuf = [];
+        //var pos=0;
+
+        function HeaderString(){ // 30 Byte -- 파일인식정보
+            return {
+                text    : getByte(19)
+               ,version : getByte( 5)
+               ,eof     : getByte( 1, 'int8') // 26 0x1A EOF
+               ,no1     : getByte( 1, 'int8') // 1
+               ,no2     : getByte( 1, 'int8') // 2
+               ,no3     : getByte( 1, 'int8') // 3
+               ,no4     : getByte( 1, 'int8') // 4
+               ,no5     : getByte( 1, 'int8') // 5
+            }
+        }
+
+        var 용지종류=['사용자 정의','프린트 80','프린트 132','A4','레터','B5','B4','리갈','A3'];
+        HWP.용지종류 = 용지종류;
+        var HWP1X = false;
+        HWP.HWP1X = HWP1X;
+        function FileHeader(hs){ // 128 Byte
+            HWP1X = hs.version.charAt(0)=='1';
+            HWP.HWP1X = HWP1X;
+            return {
+                 커서줄     : getByte( 2, 'int16') // 문서를 저장할 당시 커서가 위치한 문단 번호
+                ,커서칸     : getByte( 2, 'int16') // 문서를 저장할 당시 커서가 위치한 문단 칸
+                //,용지종류   : getByte( 1, 'int8' ) // 용지종류
+                ,용지종류   : 용지종류[getByte( 1, 'int8' )] // 용지종류
+                ,용지방향   : getByte( 1, 'int8' ) // 0:보통 1:넓게
+                ,용지길이   : getByte( 2, 'int16') // 1/1800인치
+                ,용지너비   : getByte( 2, 'int16') // 1/1800인치
+                ,위쪽여백   : getByte( 2, 'int16') // 1/1800인치
+                ,아래쪽여백 : getByte( 2, 'int16') // 1/1800인치
+                ,왼쪽여백   : getByte( 2, 'int16') // 1/1800인치
+                ,오른쪽여백 : getByte( 2, 'int16') // 1/1800인치
+                ,머리말길이 : getByte( 2, 'int16') // 1/1800인치
+                ,꼬리말길이 : getByte( 2, 'int16') // 1/1800인치
+                ,제본여백   : getByte( 2, 'int16') // 1/1800인치
+                ,문서보호   : getByte( 4, 'int32') // 0:일반문서 1:보호된 문서 (편집불가)
+                ,예약       : getByte( 2, 'int16') // 1:HWP 외부에서 만들어진 문서(컨버터가 만든문서) bit  처리, 외부문서의 경우 realign.
+                ,쪽번호연결  : getByte( 1, 'int8' ) // 1 = 연결, 0 = 새로 시작 (연결 인쇄에서 사용됨)
+                ,각주번호연결: getByte( 1, 'int8' ) // 1 = 연결, 0 = 새로 시작 (연결 인쇄에서 사용됨)
+                ,연결인쇄파일 : getByte( HWP1X?35:40 ) // 연결 인쇄할 파일의 이름
+//                ,연결인쇄파일 : getByte(  40) // 연결 인쇄할 파일의 이름
+                ,덧붙이는말   : getByte(  24) // 문서 파일에 대한 부가설명
+//                ,tmp31 : getByte(  1, 'int8')  // 121 번째 - 암호화여부 1
+//                ,tmp32 : getByte(  1, 'int8')  // 122 번째 - 암호화여부 2
+                ,암호여부 : getByte( 2, 'int16') // 0:보통 파일, 이외:암호 걸린 파일
+                ,시작페이지번호 : getByte( 2, 'int16')
+                ,각주옵션:{각주시작번호:getByte( 2, 'int16')
+                          ,예약        :getByte( 2, 'int16') // (각주개수)
+                          ,분리선간격  :getByte( 2, 'int16') // 각주 분리선과 본문 사이의 간격
+                          ,본문간격    :getByte( 2, 'int16') // 각주와 본문 사이의 간격
+                          ,각주간격    :getByte( 2, 'int16') // 각주와 각주 사이의 간격
+                          ,괄호        :getByte( 1, 'int8' ) // ')' = 각주 번호에 ')'를 붙임, 0=안 붙임
+                          ,분리선너비  :getByte( 1, 'int8' )}// 각주 분리선 너비. 0=5cm, 1=본문의 1/3, 2=단너비, 3=없음
+                ,테두리간격:{왼쪽  :getByte( 2, 'int16')  // 쪽 테두리와 본문 간격 (왼쪽,오른쪽,위,아래)
+                            ,오른쪽:getByte( 2, 'int16')
+                            ,위    :getByte( 2, 'int16')
+                            ,아래  :getByte( 2, 'int16')}
+                ,테두리종류 : getByte( 2, 'int16') //  쪽 테두리 선의 종류.  0 = 없음, 이외 = 종류
+                ,빈줄감춤   : getByte( 1, 'int8' ) // 0 이외 = on
+                ,틀옮김     : getByte( 1, 'int8' ) // 0 이외 = on
+                ,압축       : getByte( 1, 'int8' ) // 0 = 압축되지 않은 파일, 이외 = 압축된 파일
+                ,subRevision: getByte( 1, 'int8' ) // 언제나 1 (0은 글3.0에서 만든파일)
+                ,tmp1 : HWP1X?getByte(  1, 'int8'):''  // v1.x 에만 사용함.
+                ,tmp2 : HWP1X?getByte(  1, 'int8'):''  // v1.x 에만 사용함.
+                ,tmp3 : HWP1X?getByte(  1, 'int8'):''  // v1.x 에만 사용함.
+                ,tmp4 : HWP1X?getByte(  1, 'int8'):''  // v1.x 에만 사용함.
+                ,tmp5 : HWP1X?getByte(  1, 'int8'):''  // v1.x 에만 사용함.
+                ,정보블록길이:getByte( 2, 'int16') // 정보 블록의 길이 (바이트 단위)
+
+            }
+        }
+
+        //console.log(`[${getByte(24)}]`)
+        //console.log(`[${JSON.stringify(HeaderString())}]`)
+        var headerString = HeaderString();
+        HWP.headerString = headerString;
+        console.log(headerString)
+        if(headerString.text != 'HWP Document File V') return 'HWP 문서가 아님';
+        var fileHeader = FileHeader(headerString);
+        HWP.fileHeader = fileHeader;
+        console.log(fileHeader)
+        console.log(GetByte.pos)
+
+
+//        if(headerString.version.indexOf('1.2')==-1
+//           && headerString.version.indexOf('1.5')==-1) return 'HWP Document File V1.2, V1.5 문서만 지원함.\n ---> HWP Document File V' + headerString.version;
+
+
+        function HWP1XRead(){  // HWP V1.x 용 문서 읽기
+            function TextHeader(){ // 20 Byte 
+                return {
+                    num1 : getByte( 1, 'int8') 
+                   ,num2 : getByte( 1, 'int8') 
+                   ,info : getByte(18) 
+                }
+            } 
+
+            function AttrHeader(){ // 3 Byte
+                return {
+                    num  : getByte(1, 'int8' )
+                   ,attr : getByte(2, 'int16')
+                }
+            }
+    //        var MAXHWPLINE = 100;
+            var MAXHWPLINE = 1000;
+            var max = 0;
+            var str = '';
+            while (max < MAXHWPLINE - 1) {
+//            while (max < 20) {
+                //console.log('max',max)
+                var textHeader = TextHeader();
+                //console.log('textHeader',textHeader)
+                var charnum = textHeader.num1 * 256 + textHeader.num2;
+                while (charnum == 0) {
+                    var textHeader = TextHeader();
+                    //console.log('textHeader',textHeader)
+                    if(textHeader.num2 == 26) return; // 파일끝(EOF:26) 이면 강제종료
+                    charnum = textHeader.num1 * 256 + textHeader.num2;
+                    //console.log('charnum',charnum)
+                }
+                var attrnum = 0;
+                while (charnum > attrnum) {
+                    var attrHeader = AttrHeader ();
+                    //console.log('attrHeader',attrHeader)
+                    attrnum += attrHeader.num;
+                    //console.log('charnum',charnum)
+                }
+                var empty = getByte(1, 'int8' ); // 0x00
+                //console.log('empty',empty)
+/** /
+                var temp = [];
+                for (var i=pos=0;i < charnum;i++) {
+                    ch2 = getByte(1, 'int8');
+                    ch1 = getByte(1, 'int8');
+                    //console.log('ch2', ch2, 'ch1', ch1);
+                    if (ch1 >= 64 && ch1 <= 83) {
+                        hanjavalue = (ch1 - 64) * 256 + ch2;
+                        ch1 = (224 + ((hanjavalue - 1) / 188));
+                        ch2 = ((hanjavalue - 1) % 188 + 50);
+                        if (ch2 > 127) ch2 = ch2 + 18;
+                    }
+                    if (ch1) temp[pos++] = ch1; // char
+                    temp[pos] = ch2; // char 
+                    if (ch1 == 0 && ch2 >= 179) {
+                        temp[pos] = '+';
+                        if (ch2 == 188 || ch2 == 199 || ch2 == 210 || ch2 == 221
+                         || ch2 == 232 || ch2 == 243 || ch2 == 254) temp[pos] = '-';
+                        if (ch2 == 189 || ch2 == 200 || ch2 == 211 || ch2 == 222
+                         || ch2 == 233 || ch2 == 244 || ch2 == 255) temp[pos] = '|';
+                    }
+                    pos++;
+                    if (pos > 253) break;
+                }
+                console.log(temp);
+                var getString = new GetByte(temp);
+                //GetByte.isHwp = true;
+                tmpStr = getString(temp.length);
+                console.log(`temp[${tmpStr}]`);
+                str += tmpStr;
+/**/
+
+//                GetByte.isHwp = true; // HWPChar 적용시작
+                for (var i=pos=0;i < charnum;i++) {
+                    str+=getByte(2);
+                    pos++;
+                    if (pos > 253) break;
+                }
+//                console.log(str)
+/**/
+                max++;
+            }
+            return str;
+        }
+
+        GetByte.isHwp = true; // HWPChar 적용시작
+        console.log('HWP1X',HWP1X)
+        if(HWP1X) return HWP1XRead();  // 1.x 용문서이면 읽어서 반환함 이후 취소
+
+        function 문서요약정보(){ // 1008 Byte
+            return {
+                 제목   : getByte(56*2) // HWPChar 형식으로 읽음 2바이트 문자가 1개의 문자임.
+                ,주제   : getByte(56*2)
+                ,지은이 : getByte(56*2)
+                ,날짜   : getByte(56*2)
+                ,키워드 : [getByte(56*2),getByte(56*2)]
+                ,기타   : [getByte(56*2),getByte(56*2),getByte(56*2)]
+            };
+        }
+
+        /* V3.X 문서의 경우 */
+        var 문서요약;
+//        if(headerString.version.indexOf('3.')>-1){ // 3.0 문서인경우
+            문서요약 = 문서요약정보();
+            console.log('문서요약',문서요약);
+//            console.log(GetByte.pos)
+//        }
+        console.log(GetByte.pos)
+
+
+        function 정보블럭정보(){ // 가변
+            var 정보={ID:0, 길이:0, 내용:[]};
+            정보.ID = getByte(2,'int16');
+            정보.길이 = getByte(2,'int16');
+            for(i=0; i<정보.길이; i++) 정보.내용.push( getByte(1, 'int8') );
+            //정보.내용=getByte(정보.길이);
+            return 정보;
+            /*
+            return {
+                ID  :getByte(2,'int16')
+               ,길이:getByte(2,'int16')
+               ,내용:''
+           }
+           */
+        }
+
+        console.log('fileHeader.정보블록길이', fileHeader.정보블록길이)
+        if(fileHeader.정보블록길이){
+            GetByte.isHwp=false; // HWPChar 해제
+            var 정보블럭=정보블럭정보();
+            //정보블럭.내용=getByte(28687);
+            //정보블럭.내용=GetByte.uInt8Array.slice(GetByte.pos, GetByte.pos+정보블럭.길이); // 정보블럭 내용은 다음에
+            console.log('정보블럭',정보블럭);
+            console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+        }
+
+        //getByte(GetByte.pos+정보블럭.길이, 'pos'); // 내용만큼 포인트 이동
+        //console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+
+        console.log('fileHeader.압축', fileHeader.압축)
+
+        if(fileHeader.압축){
+             //zip = new JSZip();
+             var data = GetByte.uInt8Array.slice(GetByte.pos, GetByte.uInt8Array.length);
+             //contents = zip.loadAsync(data); // decodeFileName 은 한글 제목을 decode 하기위해서이다.
+
+             content = pako.inflate(data, { windowBits: -15 }); //압축되어있어 풀어줘야함
+             getByte = GetByte(content); // 버퍼 재설정
+
+        }
+
+        function 글꼴이름정보(){
+            GetByte.isHwp=false; // HWPChar 해제
+            //GetByte.isHwp=true; // HWPChar 해제
+            var 정보 = {한글:{nfonts:0,fontnames:[]}
+                       ,영문:{nfonts:0,fontnames:[]}
+                       ,한자:{nfonts:0,fontnames:[]}
+                       ,일어:{nfonts:0,fontnames:[]}
+                       ,기타:{nfonts:0,fontnames:[]}
+                       ,기호:{nfonts:0,fontnames:[]}
+                       ,사용자:{nfonts:0,fontnames:[]}}
+            정보.한글.nfonts = getByte(2, 'int16');
+            for(var i=0; i<정보.한글.nfonts; i++) 정보.한글.fontnames.push( getByte(40) );
+            정보.영문.nfonts = getByte(2, 'int16');
+            for(var i=0; i<정보.영문.nfonts; i++) 정보.영문.fontnames.push( getByte(40) );
+            정보.한자.nfonts = getByte(2, 'int16');
+            for(var i=0; i<정보.한자.nfonts; i++) 정보.한자.fontnames.push( getByte(40) );
+            정보.일어.nfonts = getByte(2, 'int16');
+            for(var i=0; i<정보.일어.nfonts; i++) 정보.일어.fontnames.push( getByte(40) );
+            정보.기타.nfonts = getByte(2, 'int16');
+            for(var i=0; i<정보.기타.nfonts; i++) 정보.기타.fontnames.push( getByte(40) );
+            정보.기호.nfonts = getByte(2, 'int16');
+            for(var i=0; i<정보.기호.nfonts; i++) 정보.기호.fontnames.push( getByte(40) );
+            정보.사용자.nfonts = getByte(2, 'int16');
+            for(var i=0; i<정보.사용자.nfonts; i++) 정보.사용자.fontnames.push( getByte(40) );
+            return 정보;
+        }
+        var 글꼴이름 = 글꼴이름정보();
+        console.log('글꼴이름',글꼴이름);
+        HWP.글꼴이름 = 글꼴이름;
+        console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+
+        console.log(HWP.글꼴이름)
+
+        function 스타일정보(){
+            function 글자모양자료구조(){ // 31 Byte
+                return {
+                     크기 : getByte(2, 'int8') // 글자의 크기
+                    ,글꼴 : [getByte(1,'int8')  // 각 언어별 글꼴 인덱스(표 34 참조)
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')]
+                    ,장평 : [getByte(1,'int8')  // 각 언어별 장평 비율, 50% ～ 200%(표 34 참조)
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')]
+                    ,자간 : [getByte(1,'int8')  // 각 언어별 자간 비율, -50% ～ 50%(표 34 참조)
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')]
+                    ,음영색 : getByte(1,'int8') //  0 ～ 7, 메뉴 순서 대로 *
+                    ,글자색 : getByte(1,'int8') //  0 ～ 7, 메뉴 순서 대로 *
+                    ,음영비율 : getByte(1,'int8') //   0% ～ 100%
+                    ,속성 : getByte(1,'int8') //   bit 0 = 이탤릭
+                                             //   bit 1 = 진하게
+                                             //   bit 2 = 밑줄
+                                             //   bit 3 = 외곽선
+                                             //   bit 4 = 그림자
+                                             //   bit 5 = 위첨자
+                                             //   bit 6 = 아래첨자
+                                             //   bit 7 = 글꼴에 어울리는 빈 칸
+                    ,예약 : [getByte(1,'int8')  // 
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')
+                            ,getByte(1,'int8')]
+                }
+            }
+            function 문단모양자료구조(){ // 187 Byte
+                function 탭설정(){ // 4 Byte
+                    return {
+                         종류      :getByte( 'byte')  // 0 ～ 3 (왼쪽, 오른쪽, 가운데, 소수점 탭)
+                        ,점끌기여부:getByte( 'byte')
+                        ,탭위치    :getByte('hunit')
+                    }
+                }
+                function 단정의(){ // 8 Byte
+                    return {
+                         단수    :getByte( 'byte')
+                        ,단구분선:getByte( 'byte')// 0-4. {조판,다단,단구분선, 메뉴 순서 (도스 버전 기준)}
+                        ,단간격  :getByte('hunit')
+                        ,예약    :[getByte('byte'),getByte('byte')
+                                  ,getByte('byte'),getByte('byte')]
+                    }
+                }
+                var info = {
+                     왼쪽여백    :getByte( 'hunit')
+                    ,오른쪽여백  :getByte( 'hunit')
+                    ,들여쓰기    :getByte('shunit')
+                    ,줄간격      :getByte( 'hunit') // MSB가 1이면 절대 간격, 이외는 퍼센트 단위
+                    ,문단아래간격:getByte( 'hunit')
+                    ,낱말간격    :getByte(  'byte') // 퍼센트 단위
+                    ,정렬방식    :getByte(  'byte') // 0 - 7, 도스 버전의 ‘문단모양-정렬방식’ 순서.
+                    ,탭설정      :[] // 최대 40개까지의 {탭 설정} 정보
+                    ,단정의      :단정의() // 다단에 대한 정보
+                    ,음영비율    :getByte(  'byte') // 문단 테두리 음영 비율, 퍼센트 단위
+                    ,문단테두리  :getByte(  'byte') // 0 = 문단 테두리 없음, 1 = 문단 테두리 있음
+                    ,선연결      :getByte(  'byte') // 0 = 위/아래 문단과 테두리 선 연결하지 않음
+                                                    // 1 = 위/아래 문단과 테두리 선 연결
+                    ,문단위간견  :getByte( 'hunit')
+                    ,예약        :[getByte('byte'),getByte('byte')]
+                }
+                for(var i=0; i<40; i++) info.탭설정.push( 탭설정() );
+                return info;
+            }
+
+            var info = {개수:0, 정보:[]}
+            info.개수 = getByte(2,'int16');
+            for(var i=0; i<info.개수; i++) {
+                info.정보.push({이름:getByte(20)
+                               ,글자모양:글자모양자료구조()
+//                               ,문단모양:getByte(187)});
+                               ,문단모양:문단모양자료구조()});
+            }
+
+            return info;
+        }
+        var 스타일 = 스타일정보();
+        HWP.스타일 = 스타일;
+        console.log('스타일', 스타일);
+
+
+        var str = '';
+        str += 'HWP Document File V' + headerString.version;
+        return str;
+    }
+
+    var hwpFiles = [
+    /* 0 */  "dos/C_Drv/COMM/I53/DOWN/프린세~2.HWP"  // v3.00
+    /* 1 */ ,"dos/C_Drv/COMM/I60/DOWN/DOWNBACK/PBRI0010.HWP" // v3.00
+    /* 2 */ ,"dos/C_Drv/LANG/TC/README.HWP"
+    /* 3 */ ,"dos/C_Drv/LANG/TC/TURBOLIB.HWP"
+    /* 4 */ ,"dos/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP"
+    /* 5 */ ,"dos/C_Drv/MUSIC/DATA/OCP/UPDATE.HWP"
+    /* 6 */ ,"dos/C_Drv/MUSIC/MIDI/CAKEPRO/DOWN/요금.HWP"  // v3.00
+    /* 7 */ ,"dos/C_Drv/OFFICE/HWP30/PATCH/README.HWP"     // v3.00
+    /* 8 */ ,"dos/C_Drv/이야기방/새글/엽기적인그녀/엽기적인그녀 2부.hwp" // v3.00
+    /* 9 */ ,"txt/책 ebook 전자책/환타지/하이엘프의숲/FOREST0.HWP" // v3.00
+    /*10 */ ,"한글문서파일형식_배포용문서_revision1.2.hwp" // v3.00
+        ];
+
+    fetch(url || hwpFiles[2])
+        .then(rs=>{return rs.arrayBuffer();})
+        .then(buffer => hwp.innerText=HWP(buffer))
+  </script>
+</head>
+<body>
+<div id=listDiv><pre id=hwp>&nbsp;</pre></div>
+<div id=pageDiv></div>
+<div id=debug></div>
+</body>
+</html>
