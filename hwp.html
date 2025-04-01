@@ -20,7 +20,7 @@
     var url = params && params.get("url") && decodeURIComponent(params.get("url"));
 
     function HWP(buffer){
-        var getByte = new GetByte(buffer);
+         getByte = new GetByte(buffer);
         //HWP.getByte = getByte;
         //var charbuf = [];
         //var pos=0;
@@ -133,7 +133,7 @@
             var max = 0;
             var str = '';
             while (max < MAXHWPLINE - 1) {
-//            while (max < 20) {
+//            while (max < 20) { // DEBUG용
                 //console.log('max',max)
                 var textHeader = TextHeader();
                 //console.log('textHeader',textHeader)
@@ -154,39 +154,7 @@
                 }
                 var empty = getByte(1, 'int8' ); // 0x00
                 //console.log('empty',empty)
-/** /
-                var temp = [];
-                for (var i=pos=0;i < charnum;i++) {
-                    ch2 = getByte(1, 'int8');
-                    ch1 = getByte(1, 'int8');
-                    //console.log('ch2', ch2, 'ch1', ch1);
-                    if (ch1 >= 64 && ch1 <= 83) {
-                        hanjavalue = (ch1 - 64) * 256 + ch2;
-                        ch1 = (224 + ((hanjavalue - 1) / 188));
-                        ch2 = ((hanjavalue - 1) % 188 + 50);
-                        if (ch2 > 127) ch2 = ch2 + 18;
-                    }
-                    if (ch1) temp[pos++] = ch1; // char
-                    temp[pos] = ch2; // char 
-                    if (ch1 == 0 && ch2 >= 179) {
-                        temp[pos] = '+';
-                        if (ch2 == 188 || ch2 == 199 || ch2 == 210 || ch2 == 221
-                         || ch2 == 232 || ch2 == 243 || ch2 == 254) temp[pos] = '-';
-                        if (ch2 == 189 || ch2 == 200 || ch2 == 211 || ch2 == 222
-                         || ch2 == 233 || ch2 == 244 || ch2 == 255) temp[pos] = '|';
-                    }
-                    pos++;
-                    if (pos > 253) break;
-                }
-                console.log(temp);
-                var getString = new GetByte(temp);
-                //GetByte.isHwp = true;
-                tmpStr = getString(temp.length);
-                console.log(`temp[${tmpStr}]`);
-                str += tmpStr;
-/**/
 
-//                GetByte.isHwp = true; // HWPChar 적용시작
                 for (var i=pos=0;i < charnum;i++) {
                     str+=getByte(2);
                     pos++;
@@ -218,6 +186,7 @@
         var 문서요약;
 //        if(headerString.version.indexOf('3.')>-1){ // 3.0 문서인경우
             문서요약 = 문서요약정보();
+            HWP.문서요약 = 문서요약;
             console.log('문서요약',문서요약);
 //            console.log(GetByte.pos)
 //        }
@@ -244,6 +213,7 @@
         if(fileHeader.정보블록길이){
             GetByte.isHwp=false; // HWPChar 해제
             var 정보블럭=정보블럭정보();
+            HWP.정보블럭 = 정보블럭;
             //정보블럭.내용=getByte(28687);
             //정보블럭.내용=GetByte.uInt8Array.slice(GetByte.pos, GetByte.pos+정보블럭.길이); // 정보블럭 내용은 다음에
             console.log('정보블럭',정보블럭);
@@ -256,13 +226,13 @@
         console.log('fileHeader.압축', fileHeader.압축)
 
         if(fileHeader.압축){
-             //zip = new JSZip();
-             var data = GetByte.uInt8Array.slice(GetByte.pos, GetByte.uInt8Array.length);
-             //contents = zip.loadAsync(data); // decodeFileName 은 한글 제목을 decode 하기위해서이다.
+            //zip = new JSZip();
+            var data = GetByte.uInt8Array.slice(GetByte.pos, GetByte.uInt8Array.length);
+            //contents = zip.loadAsync(data); // decodeFileName 은 한글 제목을 decode 하기위해서이다.
 
-             content = pako.inflate(data, { windowBits: -15 }); //압축되어있어 풀어줘야함
-             getByte = GetByte(content); // 버퍼 재설정
-
+            content = pako.inflate(data, { windowBits: -15 }); //압축되어있어 풀어줘야함
+            getByte = GetByte(content); // 버퍼 재설정
+            
         }
 
         function 글꼴이름정보(){
@@ -298,7 +268,6 @@
 
         console.log(HWP.글꼴이름)
 
-        function 스타일정보(){
             function 글자모양자료구조(){ // 31 Byte
                 return {
                      크기 : getByte(2, 'int8') // 글자의 크기
@@ -378,6 +347,8 @@
                 return info;
             }
 
+
+        function 스타일정보(){
             var info = {개수:0, 정보:[]}
             info.개수 = getByte(2,'int16');
             for(var i=0; i<info.개수; i++) {
@@ -392,12 +363,154 @@
         var 스타일 = 스타일정보();
         HWP.스타일 = 스타일;
         console.log('스타일', 스타일);
+        console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
 
+        function getByteArray(type, cnt){
+            var tmp = [];
+            for(var i=0; i<cnt; i++) tmp.push( getByte(type) );
+            return tmp;
+        }
+
+        function 글자모양자료구조(){
+            return {
+                 크기    :getByte('hunit') // 글자의 크기
+                ,글꼴    :getByteArray('byte',7) // 각 언어별 글꼴 인덱스(표 34 참조)
+                ,글꼴    :getByteArray('byte',7) // 각 언어별 장평 비율, 50% ～ 200%(표 34 참조)
+                ,자간    :getByteArray('byte',7) // 각 언어별 자간 비율, -50% ～ 50%(표 34 참조)
+                ,음영색  :getByte('byte') // 0 ～ 7, 메뉴 순서 대로 *
+                ,글자색  :getByte('byte') // 0 ～ 7, 메뉴 순서 대로 *
+                ,음영비율:getByte('byte') // 0% ～ 100%
+                ,속성    :getByte('byte') // bit 0 = 이탤릭
+                                          // bit 1 = 진하게
+                                          // bit 2 = 밑줄
+                                          // bit 3 = 외곽선
+                                          // bit 4 = 그림자
+                                          // bit 5 = 위첨자
+                                          // bit 6 = 아래첨자
+                                          // bit 7 = 글꼴에 어울리는 빈 칸
+                ,예약    :getByteArray('byte',4)
+            }
+        }
+        //var 글자모양=new 글자모양자료구조();
+        //HWP.글자모양 = 글자모양
+        //console.log('글자모양',글자모양);
+        //console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+
+        function 추가정보(){
+            var info = {ID:0,길이:0,내용:[]};
+            info.ID   = getByte('dword');
+            info.길이 = getByte('dword');
+            info.내용 = getByteArray('byte',info.길이);
+            return info;
+        }
+        var 추가정보블록;
+
+
+        function 문단정보(){
+            info = {
+                 앞문단모양    :getByte('byte') // 0 = 새 문단 모양이 저장됨
+                                                // 이외 = 앞 문단 모양을 따라감
+                ,글자수        :getByte('word') // 0 = 빈 문단 (문단 리스트의 끝)
+                                                // 이외 = 문단 내용의 글자 수 (hchar 단위)
+                ,줄수          :getByte('word') // 문단의 줄 수
+                ,글자모양포함  :getByte('byte') // 0 = 모든 글자가 대표 글자 모양을 따라감
+                                                // 이외 = 각 글자에 대한 모양이 별도로 저장됨
+                ,기타플래그    :getByte('byte') // bit 0 = 단 나눔
+                                                // bit 1 = 페이지 나눔
+                                                // bit 2 = 조판 나눔
+                                                // bit 3 = 블록 보호 시작
+                                                // bit 4 = 블록 보호 중간
+                                                // bit 5 = 블록 보호 끝
+                                                // bit 6 = 외톨이줄 보호
+                                                // bit 7 = 예약
+                ,특수문자플래그:getByte('dword') // 각 비트가 0-31 사이의 특수 문자 존재 여부를 표현
+                ,스타일        :getByte('byte') // 문단의 스타일 인덱스
+              //,대표글자모양  :null // ‘글자 모양 포함*’이 0일 때 사용될 글자 모양
+                ,대표글자모양  :글자모양자료구조() // ‘글자 모양 포함*’이 0일 때 사용될 글자 모양
+                ,문단모양      :null // ‘앞 문단 모양*’이 0일 때만 저장됨
+            }
+            //if(info.글자모양포함==0) info.대표글자모양 = 글자모양자료구조()
+            if(info.앞문단모양  ==0) info.문단모양     = 문단모양자료구조()
+            return info;
+        }
+
+        function 줄정보(){
+            return {
+                 줄의시작위치 :getByte( 'word') // 문단 내용에서 줄이 시작하는 위치 (hchar 단위 오프셋)
+                ,공백보정값   :getByte('hunit') // 보정을 위해 공백 문자의 폭에 더해줄 값
+                ,줄의높이     :getByte('hunit') // 줄에서 가장 큰 글자의 높이
+                ,예약         :getByteArray('byte',6)
+                ,단_페이지구분:getByte( 'word') // 이 줄이 단/페이지의 경계인지 여부
+                                                // bit 0 = 페이지 경계
+                                                // bit 1 = 단 경계
+                                                // bit 2-14 = 예약
+                                                // bit 15 = 1일 때만 단/페이지 구분 정보가 유효하다.
+            }
+        }
+        function 글자모양정보() {
+            var info = [];
+            for(var i=0; i<문단.글자수; i++){
+                var tmp = {flag:null,글자모양:null}
+                tmp.flag = getByte('byte');
+                if(tmp.flag!=1) {
+                    tmp.글자모양 = 글자모양자료구조() ;
+                }
+                info.push( tmp );
+            }
+            return info;
+        }
 
         var str = '';
-        str += 'HWP Document File V' + headerString.version;
+        str += 'HWP Document File V' + headerString.version+'\n\n\n';
+
+for(var ii=0; ii<5; ii++){
+console.log('ii', ii);
+        var 문단 = 문단정보();
+        console.log('문단',문단);
+        HWP.문단 = 문단;
+        console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+        var 줄 = [];
+        for(var i=0; i<문단.줄수; i++) 줄.push( 줄정보() );
+        console.log('줄',줄);
+        HWP.줄 = 줄;
+        console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+        var 글자모양=글자모양정보();
+        HWP.글자모양 = 글자모양;
+        console.log('글자모양',글자모양);
+        console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+
+        //for(var i=0; i<100; i++) str += getByte('hchar');
+        GetByte.isHwp = true; // HWPChar 적용시작
+        var tmp = getByte(문단.글자수*2);
+        console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+        //console.log('tmp',tmp)
+        str += tmp;
+        GetByte.isHwp = false; // HWPChar 적용해제
+}
+
+
+
         return str;
     }
+
+
+Uint8Array.prototype.findArr = function(start,findArr){
+    var isFind = false;
+    var idx = 0;
+    var jStart = 0;
+    for(var i=start; i<this.length; i++){
+        if(jStart == findArr.length) break;
+        for(var j=jStart; j<findArr.length; j++){
+            if(this[i] == findArr[j]) {
+                idx = i;
+                jStart++;
+                break;
+            }
+        }
+    }
+    if(jStart == findArr.length) return idx;
+}
+
 
     var hwpFiles = [
     /* 0 */  "dos/C_Drv/COMM/I53/DOWN/프린세~2.HWP"  // v3.00
@@ -413,13 +526,13 @@
     /*10 */ ,"한글문서파일형식_배포용문서_revision1.2.hwp" // v3.00
         ];
 
-    fetch(url || hwpFiles[2])
+    fetch(url || hwpFiles[9])
         .then(rs=>{return rs.arrayBuffer();})
         .then(buffer => hwp.innerText=HWP(buffer))
   </script>
 </head>
 <body>
-<div id=listDiv><pre id=hwp>&nbsp;</pre></div>
+<div id=listDiv><pre aria-label="ASCII COW" id=hwp>&nbsp;</pre></div>
 <div id=pageDiv></div>
 <div id=debug></div>
 </body>
