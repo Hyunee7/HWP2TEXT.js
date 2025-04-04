@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>hwp 보기</title>
   <style>
-    body {background-color:#181818; color:#888888;}
+    body {background-color:#181818; color:#bbbbbb;}
     pre {
         white-space: break-spaces;
      /* white-space: pre-wrap; */
@@ -19,7 +19,7 @@
     var params = URLSearchParams && new URLSearchParams(document.location.search.substring(1));
     var url = params && params.get("url") && decodeURIComponent(params.get("url"));
 
-    var DEBUG = 1;
+    var DEBUG = false;
 
     function HWP(buffer){
          getByte = new GetByte(buffer);
@@ -191,7 +191,9 @@
         /* V3.X 문서의 경우 */
         var 문서요약;
 //        if(headerString.version.indexOf('3.')>-1){ // 3.0 문서인경우
+        GetByte.isHwp = true; // HWPChar 적용시작
             문서요약 = 문서요약정보();
+        GetByte.isHwp = false; // HWPChar 적용해제
             HWP.문서요약 = 문서요약;
             //if(DEBUG) 
                 console.log('문서요약',문서요약);
@@ -275,49 +277,7 @@
         if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
 
         if(DEBUG) console.log(HWP.글꼴이름)
-/*
-            function 글자모양자료구조(){ // 31 Byte
-                return {
-                     크기 : getByte(2, 'int8') // 글자의 크기
-                    ,글꼴 : [getByte(1,'int8')  // 각 언어별 글꼴 인덱스(표 34 참조)
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')]
-                    ,장평 : [getByte(1,'int8')  // 각 언어별 장평 비율, 50% ～ 200%(표 34 참조)
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')]
-                    ,자간 : [getByte(1,'int8')  // 각 언어별 자간 비율, -50% ～ 50%(표 34 참조)
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')]
-                    ,음영색 : getByte(1,'int8') //  0 ～ 7, 메뉴 순서 대로 *
-                    ,글자색 : getByte(1,'int8') //  0 ～ 7, 메뉴 순서 대로 *
-                    ,음영비율 : getByte(1,'int8') //   0% ～ 100%
-                    ,속성 : getByte(1,'int8') //   bit 0 = 이탤릭
-                                             //   bit 1 = 진하게
-                                             //   bit 2 = 밑줄
-                                             //   bit 3 = 외곽선
-                                             //   bit 4 = 그림자
-                                             //   bit 5 = 위첨자
-                                             //   bit 6 = 아래첨자
-                                             //   bit 7 = 글꼴에 어울리는 빈 칸
-                    ,예약 : [getByte(1,'int8')  // 
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')
-                            ,getByte(1,'int8')]
-                }
-            }
-*/
+
             function 문단모양자료구조(){ // 187 Byte
                 function 탭설정(){ // 4 Byte
                     return {
@@ -404,7 +364,7 @@
             }
         }
 
-        function 문단정보(){
+        function 문단정보(){  // 43 또는 230 바이트
             info = {
                  앞문단모양    :getByte('byte') // 0 = 새 문단 모양이 저장됨
                                                 // 이외 = 앞 문단 모양을 따라감
@@ -466,7 +426,10 @@
             return info;
         }
 
-        function 예약특수문자형식(){ // 8 + n Byte
+        function 예약특수문자형식(식별코드){ // 8 + n Byte
+            if(식별코드>31) return null;
+            if(식별코드==13) return null;
+            console.log('식별코드',식별코드)
             /*
             var info={특수문자코드1:getByte('hchar')
                      ,정보길이     :getByte('dword') // n
@@ -474,36 +437,96 @@
                      ,정보         :[]}
             info.정보 = getByteArray('byte',info.정보길이);
             */
-            var info={특수문자코드1:getByte('hchar')
+            var info={특수문자코드1:식별코드
                      ,정보길이     :getByte('dword') // n
                      ,특수문자코드2:getByte(2,'int16') //getByte('hchar')
                      ,정보         :[]}
-            info.정보 = getByteArray('byte',info.정보길이);
+            //info.정보 = getByteArray('byte',info.정보길이);
+            switch(식별코드){
+                case  5 : info.정보 = {    // 필드 코드 - info.정보길이:예약
+                            
+                            }
+                            break;
+                case 14 : info.정보 = {    // 선, 정보=선정보 - info.정보길이:예약
+                                 예약1:getByteArray('byte',8)
+                                ,기준위치:['0:글자','1:문단','2:페이지','3:종이'][getByte('byte')]
+                                ,그림피함:getByte('byte') // 늘 1 이다
+                                ,가로위치:getByte('hunit') // 선을 대각선으로 하는 사각형의 시작점 x좌표
+                                ,세로위치:getByte('hunit') // 선을 대각선으로 하는 사각형의 시작점 y좌표
+                                ,예약2:getByteArray('byte',2)
+                                ,특수문자코드:getByte('hchar') // 늘 14 이다
+                                ,예약3:getByteArray('byte',24)
+                                ,박스크기:getByteArray('hunit',2) // 선을 대각선으로 하는 사각형의 가로,세로 크기
+                                ,예약4:getByteArray('byte',14)
+                                ,줄간격보호:['0:보호하지않음','1:보호함'][getByte('byte')]
+                                ,예약5:getByteArray('byte',9)
+                                ,선위치:getByteArray('hunit',4) // (시작점 x,y) (끝점 x,y) 좌표
+                                ,선굵기:getByte('hunit')
+                                ,음영비율:getByte('word')
+                                ,색깔:getByte('word')
+                            }
+                            break;
+                case 15 : info.정보 = null // 숨은설명 - info.정보길이:예약
+                            break;
+                case 16 : info.정보 = {    // 머리말/꼬리말 - info.정보길이:예약
+                                 예약:getByteArray('byte',8)
+        //                        ,구분:getByte('byte') // 0:머리말 1:꼬리말
+        //                        ,종류:getByte('byte') // 0:양쪽면 1:짝수면 2:홀수면
+                                ,구분:['0:머리말', '1:꼬리말'][getByte('byte')]
+                                ,종류:['0:양쪽면', '1:짝수면', '2:홀수면'][getByte('byte')]
+                            }
+                            break;
+                case 20 : info.정보 = { // 쪽번호달기 - info.정보길이:위치,모양으로 파싱
+                                 위치:info.정보길이     & 0xffff  // 0-8
+                                ,모양:info.정보길이>>16 & 0xffff  // 0 = arabic, 1 = capital roman, 2 = small roman
+                                                                 // 3-5 = 0-2와 같은 모양에 ‘- ## -’ 형태로 출력
+                            }
+                            break;
+            }
             return info;
         }
 
         var str_header = '[HWP Document File V' + headerString.version+'] 문서';
         var str = '';
-        DEBUG = true;
-//        for(var line=0; line<300; line++){
+        DEBUG = false;
+        var MAXLINE = 422;
+//        var MAXLINE = 6;
+        var 앞문단={};
+         depth=0;
+//        for(var line=0; line<MAXLINE; line++){
         for(var line=0; ; line++){
+//            if(line==MAXLINE-3) DEBUG=true;
+//            if(line==MAXLINE-2) DEBUG=true;
+//            if(line==MAXLINE-1) DEBUG=true;
             if(GetByte.pos>GetByte.uInt8Array.length){
                 console.log('문서읽기 오류 : OFFSET 초과');
                 break; // offset 초과시 강제종료
             }
-            if(DEBUG) console.log('line', line);
+            if(DEBUG)
+                console.log('line', line, 'depth', depth);
             var 문단 = 문단정보();
-            if(DEBUG) console.log('문단',문단);
             HWP.문단 = 문단;
+            if(DEBUG) console.log('문단',문단);
             if(DEBUG) console.log('문단.특수문자플래그',문단.특수문자플래그);
 
             if(문단.글자수==0){ // 문단리스트의 끝
-                var 추가정보블록=추가정보();
-                //if(DEBUG)
-                    console.info('추가정보블록',추가정보블록);
-                HWP.추가정보블록 = 추가정보블록;
-                break;
+                if(depth==0){
+                    var 추가정보블록=추가정보();
+                    if(DEBUG)
+                        console.info('추가정보블록',추가정보블록);
+                    HWP.추가정보블록 = 추가정보블록;
+                    break;
+                }
+                depth--;
             }
+
+            if(문단.앞문단모양==0 && 문단.글자수!=0){
+                앞문단=문단;
+                depth++;
+            }else{
+                //문단.특수문자플래그 = 앞문단.특수문자플래그;
+            }
+            if(DEBUG) console.log('depth',depth)
 
             if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
             var 줄 = [];
@@ -526,34 +549,80 @@
 */
 
             //for(var i=0; i<100; i++) str += getByte('hchar');
+            /**/
             if(문단.특수문자플래그){
                 var tmp='';
-                for(var i=0; i<문단.글자수; ){
+                var fffff
+                for(var i=0; i<문단.글자수; i++){
                     if(GetByte.pos>GetByte.uInt8Array.length){
                         console.log('문서읽기 오류 : OFFSET 초과');
                         break; // offset 초과시 강제종료
                     }
+//                    var 식별코드1 = GetByte.uInt8Array[GetByte.pos];
+                    var 식별코드 = GetByte.getPos();
+
                     var ch = getByte('hchar');
-                    if(ch<32){
-                        var 특수문자 = 예약특수문자형식(ch);
-                        if(DEBUG) console.log('특수문자', 특수문자);
+//                    if(식별코드=='5') str +=  '[[[[[식별코드5]]]]]]';
+//                    if(ch=='8') str +=  '[[[[[식별코드8]]]]]]'; //??
+                    if(DEBUG)
+                        console.log(`ch[${ch}]`, 식별코드, GetByte.pos);
+//                    GetByte.uInt8Array
+                    if(식별코드==13) { // 문단종료
+                        if(문단.특수문자플래그 == 16384) getByte('hchar'); // 식별코드 14 오차로 인한 보정(이유를 모르겠음)
+                        break;
+                    }
+                    if(식별코드>4 && 식별코드<32){
+                        var 특수문자 = 예약특수문자형식(식별코드);
+                        //if(DEBUG)
+                            console.log('특수문자', 특수문자);
+//                        if(ch=='13') str+='\n';
+                        if(식별코드=='16') str+='['+특수문자.정보.구분+']:'
+                        //if(문단.앞문단모양==0) 
+//                        if(ch==14) getByteArray('hchar',40);
+                        if(식별코드==10 || 식별코드==11 || 식별코드==15 || 식별코드==16 || 식별코드==17)
+                            break;
                     }else{
                         tmp+=ch;
+                        //if(ch=='\n') break;
                     }
                 }
             }else{
                 GetByte.isHwp = true; // HWPChar 적용시작
                 var tmp = getByte(문단.글자수*2);
+                if(DEBUG) console.log('tmp',tmp)
                 GetByte.isHwp = false; // HWPChar 적용해제
             }
+/*
+            if(line==3){
+                if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+                console.log('???',getByteArray('hchar',2));
+            }
+*/
+            /** /
+            var tmp='';
+            for(var i=0; i<문단.글자수; i++){
+//                var 특수문자여부 = ;
+                var ch = getByte('word');
+                console.log('ch',ch, typeof ch, 'pos',GetByte.pos);
+                var 특수문자 = 예약특수문자형식(ch);
+                if(특수문자){
+                    if(ch==16) str+='['+특수문자.정보.구분+']:'
+                    if(DEBUG) console.log('특수문자', 특수문자);
+                    break;
+                } else {
+                    getByte(GetByte.pos-=2,'pos');
+                    tmp += getByte('hchar');
+                }
+            }
+            /**/
             if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
             //console.log('tmp',tmp)
             str += tmp;
         }
 
 
-        
-        str_header+=' / ' +(line-1)+' 라인  읽기완료\n\n'
+        var _add = GetByte.pos==GetByte.uInt8Array.length?'완료':'오류'
+        str_header+=' / ' +(line-1)+' 라인  읽기' +_add+ '\n\n'
 
 
         return str_header + str;
