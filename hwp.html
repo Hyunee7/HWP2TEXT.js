@@ -447,6 +447,11 @@
                             
                             }
                             break;
+                case  9 : info.정보 = {    // 필드 코드 - info.정보길이:탭문자폭,점끌기여부로 파싱
+                                 탭문자폭  :info.정보길이     & 0xffff  // 1/1800인치
+                                ,점끌기여부:info.정보길이>>16 & 0xffff  // 
+                            }
+                            break;
                 case 14 : info.정보 = {    // 선, 정보=선정보 - info.정보길이:예약
                                  예약1:getByteArray('byte',8)
                                 ,기준위치:['0:글자','1:문단','2:페이지','3:종이'][getByte('byte')]
@@ -621,7 +626,8 @@
         }
 
 
-        var _add = GetByte.pos==GetByte.uInt8Array.length?'완료':'오류'
+//        var _add = GetByte.pos==GetByte.uInt8Array.length?'완료':'오류'
+        var _add = !!추가정보블록?'완료':'오류'
         str_header+=' / ' +(line-1)+' 라인  읽기' +_add+ '\n\n'
 
 
