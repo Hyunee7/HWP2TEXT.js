@@ -16,6 +16,8 @@
   <!-- <script src="jszip.js?v=<?=filemtime('jszip.js')?>"></script> -->
   <script src="pako.js?v=<?=filemtime('pako.js')?>"></script>
   <script>
+    Number.prototype.format = function(){return new String(this).replace(/\B(?<!\.\d*)(?=(\d{3})+(?!\d))/g, ",")}
+
     var params = URLSearchParams && new URLSearchParams(document.location.search.substring(1));
     var url = params && params.get("url") && decodeURIComponent(params.get("url"));
 
@@ -23,6 +25,7 @@
 
     function HWP(buffer){
          getByte = new GetByte(buffer);
+         GetByte.debug=DEBUG;
         //HWP.getByte = getByte;
         //var charbuf = [];
         //var pos=0;
@@ -276,8 +279,6 @@
         HWP.글꼴이름 = 글꼴이름;
         if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
 
-        if(DEBUG) console.log(HWP.글꼴이름)
-
             function 문단모양자료구조(){ // 187 Byte
                 function 탭설정(){ // 4 Byte
                     return {
@@ -388,6 +389,14 @@
                 ,문단모양      :null // ‘앞 문단 모양*’이 0일 때만 저장됨
             }
             //if(info.글자모양포함==0) info.대표글자모양 = 글자모양자료구조()
+            if(info.특수문자플래그){
+                for(var i=0; i<32; i++){
+                    if((info.특수문자플래그 >> i) == 1){
+                        info.특수문자플래그번호 = i;
+                        break;
+                    }
+                }
+            }
             if(info.앞문단모양==0 && info.글자수) info.문단모양     = 문단모양자료구조()
             return info;
         }
@@ -405,9 +414,9 @@
                                                 // bit 15 = 1일 때만 단/페이지 구분 정보가 유효하다.
             }
         }
-        function 글자모양정보() {
+        function 글자모양정보(글자수) {
             var info = [];
-            for(var i=0; i<문단.글자수; i++){
+            for(var i=0; i<글자수; i++){
                 var tmp = {flag:null,글자모양:null}
                 tmp.flag = getByte('byte');
                 if(tmp.flag!=1) {
@@ -424,6 +433,162 @@
             info.길이 = getByte('dword');
             info.내용 = getByteArray('byte',info.길이);
             return info;
+        }
+
+        function 셀정보(){ // 27 Byte
+            var 선종류값=['0:투명', '1:실선', '2:굵은 실선', '3:점선', '4:2중 실선'];
+
+            return {
+                 줄:getByte('byte') // 내장 시트 기능을 위한 줄, 칸 일련 번호 (0에서 시작)
+                ,칸:getByte('byte') // 내장 시트 기능을 위한 줄, 칸 일련 번호 (0에서 시작)
+                ,셀의색깔:getByte('word')
+                ,셀의위치:{가로:getByte('hunit'),세로:getByte('hunit')}
+                ,셀의크기:{가로:getByte('hunit'),세로:getByte('hunit')}
+                ,텍스트높이:getByte('hunit') // 셀 안에 있는 텍스트 내용의 높이
+                ,셀높이:getByte('hunit') // 사용자가 지정한 셀의 높이.
+                                         // 실제 셀의 세로 크기는 '텍스트 높이'와 '셀 높이'중에서 
+                                         // 큰 쪽으로 선택된다.
+                ,예약:getByteArray('byte',2)
+                ,상수:getByte('byte') // 늘 1 이다
+                ,가운데로:getByte('byte') // 셀 안의 글을 세로로 가운데로 오게 할지 여부
+                //,선종류:getByteArray('byte',4) // 셀의 선 종류 (왼쪽, 오른쪽, 위, 아래)
+                //                               // 선 종류: 0 = 없음, 1-4 = 메뉴 순서대로
+                //                               // 0 : 투명
+                //                               // 1 : 실선
+                //                               // 2 : 굵은 실선
+                //                               // 3 : 점선
+                //                               // 4 : 2중 실선
+                ,선종류:{왼쪽:선종류값[getByte('byte')], 오른쪽:선종류값[getByte('byte')]
+                        ,위:선종류값[getByte('byte')], 아래:선종류값[getByte('byte')]}
+                ,음영비율:getByte('byte') // 0% - 100%
+                ,대각선:getByte('byte') // bit 0,1 : 대각선 방향 (0=없음, 1=\, 2=/, 3 = X )
+                                        // bit 2 : 한 줄로 입력 Flag - 자동align되지 않음
+                                        // bit 3 : reserved
+                                        // bit 4 : 대각선 merge된 cell인가
+                                        // bit 5 : 대각선 merge된 cell일때 0=가로, 1=세로
+                                        // bit 6,7 : reserved
+                ,보호:getByte('byte') // 보호를 위해 셀로 들어갈 수 없도록 할지 여부
+            }
+        }
+
+        function 틀헤더정보(){ // 
+            return {
+                 헤더길이:getByte('dword') // 자신을 뺀 헤더의 길이, 현재는 24
+                ,zorder:getByte('dword') // 틀의 zorder 값. 첫 비트가 서 있으면 글 뒤.
+                ,개체수:getByte('dword') // 묶여 있는 개체의 개수.
+                ,차지영역:getByteArray('shunit32',4) // 선 두께 등을 고려하여 개체가 차지하는 영역을 x, y, 
+                                                     // xsize, ysize 순서로 나타냄. 좌표는 틀의 원점부터 
+                                                     // 상대적인 값.
+            }
+        }
+        function 하이퍼텍스트정보(){ // 4 + 617 x n
+            return {
+                 길이:getByte('dword') // 617 x n = 하이퍼텍스트 정보 길이
+                ,건널뛸파일이름:getByteArray('hchar',256) // 현재 파일의 책갈피라면 "\0"
+                ,건너뛀책갈피:getByteArray('hchar',16) // ‘[문서의 처음]’은 실제 존재하지는 
+                                                       // 않지만, 사용되는 책갈피 이름
+                ,매크로:getByteArray('byte',325) // 도스용에서 실행할 매크로
+                ,종류:getByte('byte') // 0,1 = 글, 2 = HTML
+                ,예약:getByteArray('byte',3) // 
+            }
+        }
+        function 그리기개체기본속성(){ // 44 Byte
+            return {
+                 선모양:{선의스타일:getByte('dword')
+                        ,끝부분화살표스타일:getByte('dword')
+                        ,시작부분화살표스타일:getByte('dword')}
+                ,선색깔:getByte('dword') // RGB 값
+                ,선굵기:getByte('hunit32') // 선의 굵기
+                ,면색깔:getByte('dword') // RGB 값
+                ,무늬종류:getByte('dword')  // bit 0-23  = 종류
+                                            // bit 24-31 = bit 24: solid(0)/hatched(1)
+                                            // bit 25: bitmap pattern(이미지 fill)
+                ,무늬색깔:getByte('dword') // RGB 값
+                ,글상자여백:{가로:getByte('hunit32') // 글상자 가로, 세로 여백.
+                            ,세로:getByte('hunit32')}
+                ,기타옵션:getByte('dword') // bit 0 = 둥근 모서리
+                                           // bit 1 = 부채꼴 테두리
+                                           // bit 2 = 반원 모서리
+                                           // bit 3 = 개체의 크기에 맞춰 비트맵 크기 조절
+                                           // bit 4 = 가운데 정렬 (그리기 글상자)
+                                           // bit 5 = 다각형이 닫혀졌는 지의 여부
+                                           // bit 6 - 15 = 예약
+                                           // bit 16 = 그라데이션 속성 존재 여부
+                                           // bit 17 = 회전 속성 존재 여부
+                                           // bit 18 = 비트맵 패턴 속성 존재 여부
+                                           // bit 19 = 그리기를 글상자로 만들 것인지의 여부
+                                           // bit 20 = 워터마크 속성 존재 여부
+                                           // bit 21 - 31 = 예약
+            }
+        }
+        function 그리기개체회전속성(){ // 32 Byte
+            return {
+                 x좌표:getByte('hunit32')
+                ,y좌표:getByte('hunit32')
+                ,평행사변형:getByte('hunit32',6) // 평행 사변형을 표현하는 세 개의 좌표를 각각 x, y 순으로 
+                                                 // 저장한다. 사각형을 회전시키고 나서 사이즈를 바꾸면 
+                                                 // 평행 사변행이 된다.
+            }
+        }
+        function 그리기개체그라데이션속성(){ // 28 Byte
+            return {
+                 시작색깔:getByte('dword') // RGB 값.
+                ,끝색깔:getByte('dword') // RGB 값.
+                ,그라데이션종류:getByte('dword') // 선형, 원형, 원뿔형, 사각형 (1 - 4)
+                ,회전각도:getByte('dword') // 중심축과 이루는 각도 (0 - 360)
+                ,가로중심:getByte('dword') // 가로 중심 (0 - 100%)
+                ,세로중심:getByte('dword') // 세로 중심 (0 - 100%)
+                ,단계:getByte('dword') // 밀도 (0 - 100)
+            }
+        }
+        function 그리기개체공통헤더정보(){ // 최대 430 Byte
+            var info = {
+                 헤더길이:getByte('dword') // 자신을 뺀 공통 헤더의 길이. 속성에 따라 가변.
+                ,개체종류:['0 = 컨테이너'
+                          ,'1 = 선'
+                          ,'2 = 사각형'
+                          ,'3 = 타원'
+                          ,'4 = 호'
+                          ,'5 = 다각형'
+                          ,'6 = 글상자'
+                          ,'7 = 곡선'
+                          ,'8 = 변형된 타원 (회전되거나 호로 편집된 타원)'
+                          ,'9 = 변형된 호 (회전된 호)'
+                          ,'10 = 선을 그릴 수 있도록 확장된 곡선'][getByte('word')]
+                ,연결정보:[0
+                          ,'bit 0 = sibling이 존재하는지 여부'
+                          ,'bit 1 = child가 존재하는지 여부'][getByte('word')]
+                ,상대위치:{x:getByte('hunit32'),y:getByte('hunit32')} // 개체가 속한 그룹의 원점부터 개체 위치 x, y.
+                ,개체크기:{가로:getByte('hunit32'),세로:getByte('hunit32')} // 개체의 가로, 세로 크기.
+                ,절대위치:{x:getByte('hunit32'),y:getByte('hunit32')} // 틀 원점부터 개체 위치 x, y.
+                ,차지영역:{x:getByte('shunit32')  // 선 두께 등을 고려하여 개체가 차지하는 영역을 x, y, xsize, 
+                          ,y:getByte('shunit32')  // ysize 순서로 나타냄. 좌표는 개체의 원점부터 상대적인 값.
+                          ,xsize:getByte('shunit32')
+                          ,ysize:getByte('shunit32')}
+                ,기본속성:그리기개체기본속성()
+                ,회전속성:null
+                ,그라데이션속성:null
+                ,비트맵패턴속성:null
+            }
+            if(info.기본속성.기타옵션 & 0x10000) info.그라데이션속성 = 그리기개체그라데이션속성();
+            if(info.기본속성.기타옵션 & 0x20000) info.회전속성 = 그리기개체회전속성();
+            if(info.기본속성.기타옵션 & 0x40000) info.비트맵패턴속성 = 그리기개체비트맵패턴속성();
+            return info;
+        }
+        function 선세부정보(){
+            return {
+                 정보1의길이:getByte('dword')  // 4
+                ,선의모양정보:getByte('dword') // bit 0 = horizontal flip
+                                               // bit 1 = vertical flip
+                ,정보2의길이:getByte('dword')  // 0
+            }
+        }
+        function 글상자세부정보(){
+            return {
+                 정보1의길이:getByte('dword')  // 0
+                ,정보2의길이:getByte('dword')  // 문단리스트 내용의 길이 n
+                ,문단리스트의내용:null // 글상자 내부의 문단 리스트를 ㅏ이너리 스트림으로 표현
+            }
         }
 
         function 예약특수문자형식(식별코드){ // 8 + n Byte
@@ -447,10 +612,116 @@
                             
                             }
                             break;
-                case  9 : info.정보 = {    // 필드 코드 - info.정보길이:탭문자폭,점끌기여부로 파싱
+                case  9 : info.정보 = {    // 탭 - info.정보길이:탭문자폭,점끌기여부로 파싱
                                  탭문자폭  :info.정보길이     & 0xffff  // 1/1800인치
                                 ,점끌기여부:info.정보길이>>16 & 0xffff  // 
                             }
+                            break;
+                case 10 : info.정보 = {    // 표/텍스트박스/수식/버튼/하이퍼텍스트 - info.정보길이:예약
+                                 예약1:getByteArray('byte',8)
+                                ,기준위치:['0:글자', '1:문단', '2:페이지', '3:종이'][getByte('byte')]
+                                ,그림피함:['0:자리차지', '1:투명', '2:어울림'][getByte('byte')]
+                                ,가로위치:getByte('shunit')  // -1=왼쪽, -2=오른쪽, -3=가운데, 이외=임의
+                                ,세로위치:getByte('shunit')  // -1=위, -2=아래, -3=가운데, 이외=임의
+                                ,기타옵션:getByte('word')    // bit 0 - 1 = 예약
+                                                             // bit 2 = 수식 크기를 문단 폭에 맞출지 여부
+                                                             // bit 3 = 예약
+                                                             // bit 4 = [하이퍼텍스트]인지 여부
+                                                             // bit 5 - 15 = 예약
+                                ,특수문자코드:getByte('hchar') // 늘 10 이다
+                                ,여백:[[getByte('shunit'),getByte('shunit'),getByte('shunit'),getByte('shunit')]   // [0-2][] = 바깥/안/셀 여백
+                                      ,[getByte('shunit'),getByte('shunit'),getByte('shunit'),getByte('shunit')]   // [][0-3] = 왼쪽/오른쪽/위/아래 여백
+                                      ,[getByte('shunit'),getByte('shunit'),getByte('shunit'),getByte('shunit')]]  // ※ [1][3] = 안여백-아래여백
+                                //,박스크기:getByteArray('hunit',2) // 가로, 세로
+                                ,박스크기:getByte('hunit',2) // 가로, 세로
+                                ,캡션크기:getByteArray('hunit',3) // 가로, 세로, 길이
+                                //,전체크기:getByteArray('hunit',2) // 박스 크기 + 캡션 + 여백
+                                ,전체크기:getByte('hunit',2) // 박스 크기 + 캡션 + 여백
+                                ,예약2:getByteArray('byte',4)
+                                ,줄간격보호:['0:보호하지않음','1:보호함'][getByte('byte')]
+                                ,예약3:getByte('byte')
+                                ,박스위치:getByteArray('hunit',2) // 실제 계산된 결과 박스의 위치. 가로, 세로.
+                                ,예약4:getByteArray('byte',4)
+                                ,캡션위치:getByte('word') // 0 - 7, 메뉴 순서
+                                ,박스번호:getByte('word') // 0부터 시작해 순서대로 매긴 일련 번호
+                                ,예약5:getByteArray('byte',2)
+                                ,표ID:getByte('word')  // 차트 연결 표 식별ID/BaseLine:수식일때. (1800 DPI)
+                                ,박스종류:['0=표', '1=텍스트박스', '2=수식', '3=버튼'][getByte('word')]
+                                ,셀개수:getByte('word') // 표일 때는 셀의 개수, 이외는 늘 1이다. (수식도 1)
+                                ,보호:getByte('word') 
+                            }
+                            break;
+                case 11 : info.정보 = {    // 그림 - info.정보길이:예약
+                                 추가정보길이:getByte('dword') // n
+                                ,예약1:getByteArray('byte',4)
+                                ,기준위치:['0:글자', '1:문단', '2:페이지', '3:종이'][getByte('byte')]
+                                ,그림위치:['0:자리차지', '1:투명', '2:어울림'][getByte('byte')]
+                                ,가로위치:getByte('shunit')  // -1=왼쪽, -2=오른쪽, -3=가운데, 이외=임의
+                                ,세로위치:getByte('shunit')  // -1=위, -2=아래, -3=가운데, 이외=임의
+                                ,기타옵션:getByte('word')    // bit 0 = 테두리 그릴지 여부
+                                                             // bit 1 = 그림을 반전시킬지 여부. 0이면 반전.
+                                                             // bit 2 = Fit to column
+                                                             // bit 3 = 0x8  unknown file
+                                                             // bit 4 = 0x10 [hypertext]
+                                                             // bit 5 = 0x20 unkown size
+                                ,특수문자코드:getByte('hchar') // 늘 11 이다
+                                ,여백:[[getByte('shunit'),getByte('shunit'),getByte('shunit'),getByte('shunit')]   // [0-2][] = 바깥/안/셀 여백
+                                      ,[getByte('shunit'),getByte('shunit'),getByte('shunit'),getByte('shunit')]   // [][0-3] = 왼쪽/오른쪽/위/아래 여백
+                                      ,[getByte('shunit'),getByte('shunit'),getByte('shunit'),getByte('shunit')]]  // ※ [1][2] = 안여백-아래여백
+                                                                                                                   // ※ 그림에서 셀 여백은 사용되지 않음
+                                ,박스크기:getByteArray('hunit',2) // 가로, 세로
+                                ,캡션크기:getByteArray('hunit',3) // 가로, 세로, 길이
+                                ,전체크기:getByteArray('hunit',2) // 박스 크기 + 캡션 + 여백
+                                ,예약2:getByteArray('byte',4)
+                                ,줄간격보호:['0:보호하지않음','1:보호함'][getByte('byte')]
+                                ,예약3:getByte('byte')
+                                ,박스위치:getByteArray('hunit',2) // 실제 계산된 결과 박스의 위치. 가로, 세로.
+                                ,예약4:getByteArray('byte',4)
+                                ,캡션위치:getByte('word') // 0 - 7, 메뉴 순서
+                                ,박스번호:getByte('word') // 0부터 시작해 순서대로 매긴 일련 번호
+                                ,그림종류:['0:외부 파일', '1:OLE Object', '2:Embedded Image', '3:Drawing Object'][getByte('byte')]
+                                ,건너뜀:getByteArray('hunit',2) // 그림에서 실제 표시를 시작할 위치 (가로, 세로)
+                                ,확대비율:getByteArray('word',2) // 0 = 고정, 이외 = 퍼센트 단위 비율 (가로, 세로)
+                                //,그림파일이름:null // 그림 종류가 0, 1, 2일 때만 사용됨.
+                                ,그림파일이름:getByte('hchar',128).join('') // 그림 종류가 0, 1, 2일 때만 사용됨.
+                                ,밝기:getByte('byte') // 워터마크: 그림의 밝기 (-100 - 100)
+                                ,명암: getByte('byte') // 워터마크: 그림의 명암 (-100 - 100)
+                                ,그림효과:['0:원래 그림으로', '1:그레이 스케일', '2:흑백으로'][getByte('byte')]
+                                ,보호여부:getByte('byte') // 그림보호가 되어 있는 지의 여부
+                                ,예약5:getByteArray('byte',5)
+                                ,추가정보:null // 그림 종류가 3(Drawing Object)일 때만 사용됨.
+                                               // 그 외는 하이퍼텍스트 정보 (11.1 참고)
+                            }
+                          if(info.정보.그림종류=='3:Drawing Object'){
+                              //info.정보.추가정보 = getByteArray('byte',info.정보.추가정보길이);
+                              //info.정보.보정 = getByteArray('byte',19+28);
+                              //info.정보.보정 = getByteArray('byte',47); // 이게 왜 필요한걸까??????
+                              //미완 /그리기 개체 자료 구조/ 필요
+/*
+글에 내장된 그림 그리기 기능으로 그려진 개체(그림 종류 3)일 때는 실제 데이터는 추가 정보에 
+저장된다. 자세한 것은 ‘그리기 개체 자료 구조’를 참조하기 바란다.
+그리기 개체가 아닐 때는 하이퍼 텍스트 정보가 포함되어 있다. 추가 정보 내용 중 처음 4byte(dword)를 
+읽어서 그 값이 0x269이면 하이퍼 텍스트 정보인 것으로 간주한다.
+*/
+                              //var 틀헤더=틀헤더정보();
+                              //console.debug('틀헤더',틀헤더)
+                              //var 그리기개체공통헤더 = 그리기개체공통헤더정보();
+                              //console.debug('그리기개체공통헤더',그리기개체공통헤더)
+                              info.정보.추가정보 = {
+                                   틀헤더:틀헤더정보()
+                                  ,그리기개체공통헤더:그리기개체공통헤더정보()
+                                  //,선세부정보:선세부정보()
+                                  ,글상자세부정보:글상자세부정보()
+                              }
+//                              info.정보.보정 = getByteArray('byte',27); // 이게 왜 필요한걸까??
+                              //info.정보.보정 = getByteArray('byte',27+28);
+                              //info.정보.보정 = getByteArray('byte',55);
+//                              info.정보.보정 = getByteArray('byte',47);
+//                              info.정보.보정 = getByteArray('byte',278);
+                          }
+                          //info.정보.보정 = getByteArray('byte',23);
+                          //info.정보.보정 = getByteArray('byte',19);
+
                             break;
                 case 14 : info.정보 = {    // 선, 정보=선정보 - info.정보길이:예약
                                  예약1:getByteArray('byte',8)
@@ -491,144 +762,146 @@
             return info;
         }
 
-        var str_header = '[HWP Document File V' + headerString.version+'] 문서';
-        var str = '';
-        DEBUG = false;
-        var MAXLINE = 422;
-//        var MAXLINE = 6;
-        var 앞문단={};
-         depth=0;
-//        for(var line=0; line<MAXLINE; line++){
-        for(var line=0; ; line++){
-//            if(line==MAXLINE-3) DEBUG=true;
-//            if(line==MAXLINE-2) DEBUG=true;
-//            if(line==MAXLINE-1) DEBUG=true;
+        var readError = false;
+        var line = 0;
+        var MAXLINE = 5;
+        DEBUG = true;
+        GetByte.debug=DEBUG;
+        function 문단읽기(depth){
+ //           console.group('문단읽기')
+            var tmp='';
             if(GetByte.pos>GetByte.uInt8Array.length){
                 console.log('문서읽기 오류 : OFFSET 초과');
-                break; // offset 초과시 강제종료
+                readError= true; // offset 초과시 강제종료
+                return tmp;
             }
-            if(DEBUG)
-                console.log('line', line, 'depth', depth);
+            /*
+            if(line==MAXLINE-3) DEBUD=true;;
+            if(DEBUG) if(line==MAXLINE){
+                console.debug('디버깅중-강제종료함');
+                return tmp;
+            }
+            */
+
+            if(DEBUG) console.debug('line', line++, 'depth', depth);
             var 문단 = 문단정보();
             HWP.문단 = 문단;
             if(DEBUG) console.log('문단',문단);
-            if(DEBUG) console.log('문단.특수문자플래그',문단.특수문자플래그);
+            if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+            if(DEBUG) if(문단.글자수) console.log('문단.특수문자플래그',문단.특수문자플래그);
+
 
             if(문단.글자수==0){ // 문단리스트의 끝
-                if(depth==0){
-                    var 추가정보블록=추가정보();
-                    if(DEBUG)
-                        console.info('추가정보블록',추가정보블록);
-                    HWP.추가정보블록 = 추가정보블록;
-                    break;
-                }
-                depth--;
+//                console.groupEnd();
+                return tmp;
             }
 
-            if(문단.앞문단모양==0 && 문단.글자수!=0){
-                앞문단=문단;
-                depth++;
-            }else{
-                //문단.특수문자플래그 = 앞문단.특수문자플래그;
-            }
-            if(DEBUG) console.log('depth',depth)
+            //if(문단.앞문단모양==0 && 문단.글자수!=0){
+            //    앞문단=문단;
+            //    depth++;
+            //}else{
+            //    //문단.특수문자플래그 = 앞문단.특수문자플래그;
+            //}
+            //if(DEBUG) console.log('depth',depth)
 
-            if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
             var 줄 = [];
             for(var i=0; i<문단.줄수; i++) 줄.push( 줄정보() );
             if(DEBUG) console.log('줄',줄);
             HWP.줄 = 줄;
             if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
             if(문단.글자모양포함){
-                var 글자모양=글자모양정보();
+                var 글자모양=글자모양정보(문단.글자수);
                 HWP.글자모양 = 글자모양;
                 if(DEBUG) console.log('글자모양',글자모양);
                 if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
             }
 
-/*
-            if(문단.특수문자플래그){
-                var 특수문자 = 예약특수문자형식();
-                console.log('특수문자', 특수문자);
-            }
-*/
 
-            //for(var i=0; i<100; i++) str += getByte('hchar');
-            /**/
             if(문단.특수문자플래그){
-                var tmp='';
-                var fffff
                 for(var i=0; i<문단.글자수; i++){
                     if(GetByte.pos>GetByte.uInt8Array.length){
                         console.log('문서읽기 오류 : OFFSET 초과');
-                        break; // offset 초과시 강제종료
+                        return tmp; // offset 초과시 강제종료
                     }
-//                    var 식별코드1 = GetByte.uInt8Array[GetByte.pos];
                     var 식별코드 = GetByte.getPos();
-
                     var ch = getByte('hchar');
 //                    if(식별코드=='5') str +=  '[[[[[식별코드5]]]]]]';
 //                    if(ch=='8') str +=  '[[[[[식별코드8]]]]]]'; //??
                     if(DEBUG)
                         console.log(`ch[${ch}]`, 식별코드, GetByte.pos);
-//                    GetByte.uInt8Array
                     if(식별코드==13) { // 문단종료
-                        if(문단.특수문자플래그 == 16384) getByte('hchar'); // 식별코드 14 오차로 인한 보정(이유를 모르겠음)
-                        break;
+                        tmp +=  '\n'+문단읽기(depth);
+                        return tmp;
                     }
-                    if(식별코드>4 && 식별코드<32){
+                    if(식별코드!=12 && 식별코드>4 && 식별코드<32){
                         var 특수문자 = 예약특수문자형식(식별코드);
                         //if(DEBUG)
-                            console.log('특수문자', 특수문자);
+                            console.info('특수문자', 특수문자);
+                        if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
 //                        if(ch=='13') str+='\n';
-                        if(식별코드=='16') str+='['+특수문자.정보.구분+']:'
+                        if(식별코드== 9) tmp+='\t';
+                        if(식별코드==10){
+                            console.group('식별코드10처리')
+                            tmp+='[표/텍스트박스/수식/버튼/하이퍼텍스트]:\n';
+                            for(var j=0; j<특수문자.정보.셀개수;j++){
+                                var 셀=셀정보();
+                                console.debug(`셀[${j}]`, 셀);
+                                //tmp+=`[셀{${i}}]:`;
+                            }
+                            for(var j=0; j<특수문자.정보.셀개수;j++){
+                                //console.debug(`셀[${j}]콜`);
+                                tmp+=`[셀{${j}}]:`+문단읽기(depth+1);
+                                //console.debug(`셀[${j}]종료`);
+                            }
+                            //console.debug('표/텍스트박스/수식/버튼/하이퍼텍스트 종료')
+                            console.groupEnd();
+                            //console.group('캡션문단')
+                            //tmp+문단읽기(depth+1); // 캡션문단읽기
+                            //console.groupEnd();
+                        }
+                        if(식별코드==11) tmp+='[그림]'
+                        if(식별코드==16) tmp+='['+특수문자.정보.구분+']:'
                         //if(문단.앞문단모양==0) 
 //                        if(ch==14) getByteArray('hchar',40);
-                        if(식별코드==10 || 식별코드==11 || 식별코드==15 || 식별코드==16 || 식별코드==17)
-                            break;
+                        if(식별코드==10 || 식별코드==11 || 식별코드==15 || 식별코드==16 || 식별코드==17){
+//                        if(식별코드==11 || 식별코드==15 || 식별코드==16 || 식별코드==17)
+                            console.group('캡션문단??')
+                            tmp+=문단읽기(depth);
+                            console.groupEnd();
+                        }
                     }else{
                         tmp+=ch;
                         //if(ch=='\n') break;
                     }
                 }
             }else{
+                if(DEBUG) GetByte.debug = false;
                 GetByte.isHwp = true; // HWPChar 적용시작
-                var tmp = getByte(문단.글자수*2);
+                tmp += getByte(문단.글자수*2);
                 if(DEBUG) console.log('tmp',tmp)
                 GetByte.isHwp = false; // HWPChar 적용해제
+                if(DEBUG) GetByte.debug = true;
             }
-/*
-            if(line==3){
-                if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
-                console.log('???',getByteArray('hchar',2));
-            }
-*/
-            /** /
-            var tmp='';
-            for(var i=0; i<문단.글자수; i++){
-//                var 특수문자여부 = ;
-                var ch = getByte('word');
-                console.log('ch',ch, typeof ch, 'pos',GetByte.pos);
-                var 특수문자 = 예약특수문자형식(ch);
-                if(특수문자){
-                    if(ch==16) str+='['+특수문자.정보.구분+']:'
-                    if(DEBUG) console.log('특수문자', 특수문자);
-                    break;
-                } else {
-                    getByte(GetByte.pos-=2,'pos');
-                    tmp += getByte('hchar');
-                }
-            }
-            /**/
             if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
-            //console.log('tmp',tmp)
-            str += tmp;
+            //str += tmp;
+//            console.groupEnd();
+            return tmp+문단읽기(depth);
         }
 
+        var str_header = '[HWP Document File V' + headerString.version+'] 문서';
+        var str = '';
+        str += 문단읽기(0);
+        var 추가정보블록=추가정보();
+//        var 추가정보블록;
+        if(DEBUG) console.info('추가정보블록',추가정보블록);
+        HWP.추가정보블록 = 추가정보블록;
+            if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
 
-//        var _add = GetByte.pos==GetByte.uInt8Array.length?'완료':'오류'
-        var _add = !!추가정보블록?'완료':'오류'
-        str_header+=' / ' +(line-1)+' 라인  읽기' +_add+ '\n\n'
+        var _add = GetByte.pos==GetByte.uInt8Array.length?'완료':'오류'
+        _add += `(${GetByte.pos.format()}/${GetByte.uInt8Array.length.format()} Byte)`;
+//        var _add = !!추가정보블록?'완료':'오류'
+//        var _add = readError?'오류':'완료'
+        str_header+='/' +(line-1)+'라인  읽기' +_add+ '\n\n'
 
 
         return str_header + str;
