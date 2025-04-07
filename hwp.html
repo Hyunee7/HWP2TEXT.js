@@ -765,11 +765,13 @@
         var readError = false;
         var line = 0;
         var MAXLINE = 5;
-        DEBUG = true;
+        DEBUG = false;
         GetByte.debug=DEBUG;
-        function 문단읽기(depth){
+        var depth=0;
+        function 문단읽기(toNext){
  //           console.group('문단읽기')
             var tmp='';
+            line++;
             if(GetByte.pos>GetByte.uInt8Array.length){
                 console.log('문서읽기 오류 : OFFSET 초과');
                 readError= true; // offset 초과시 강제종료
@@ -783,7 +785,8 @@
             }
             */
 
-            if(DEBUG) console.debug('line', line++, 'depth', depth);
+            //if(DEBUG)
+                console.debug('>>>>>>line', line, 'depth', depth);
             var 문단 = 문단정보();
             HWP.문단 = 문단;
             if(DEBUG) console.log('문단',문단);
@@ -793,6 +796,7 @@
 
             if(문단.글자수==0){ // 문단리스트의 끝
 //                console.groupEnd();
+                depth--;
                 return tmp;
             }
 
@@ -830,7 +834,8 @@
                     if(DEBUG)
                         console.log(`ch[${ch}]`, 식별코드, GetByte.pos);
                     if(식별코드==13) { // 문단종료
-                        tmp +=  '\n'+문단읽기(depth);
+                        depth++;
+                        tmp +=  '\n'+문단읽기(0);
                         return tmp;
                     }
                     if(식별코드!=12 && 식별코드>4 && 식별코드<32){
@@ -850,7 +855,8 @@
                             }
                             for(var j=0; j<특수문자.정보.셀개수;j++){
                                 //console.debug(`셀[${j}]콜`);
-                                tmp+=`[셀{${j}}]:`+문단읽기(depth+1);
+                                depth++;
+                                tmp+=`[셀{${j}}]:`+문단읽기(1);
                                 //console.debug(`셀[${j}]종료`);
                             }
                             //console.debug('표/텍스트박스/수식/버튼/하이퍼텍스트 종료')
@@ -866,7 +872,8 @@
                         if(식별코드==10 || 식별코드==11 || 식별코드==15 || 식별코드==16 || 식별코드==17){
 //                        if(식별코드==11 || 식별코드==15 || 식별코드==16 || 식별코드==17)
                             console.group('캡션문단??')
-                            tmp+=문단읽기(depth);
+                            depth++;
+                            tmp+=문단읽기(1);
                             console.groupEnd();
                         }
                     }else{
@@ -885,23 +892,42 @@
             if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
             //str += tmp;
 //            console.groupEnd();
-            return tmp+문단읽기(depth);
+//console.log('[[[[[[[[[toNext]]]]]]]',toNext);
+//            return tmp+문단읽기(toNext);
+//            return tmp;
+if(toNext!=0)   return tmp+문단읽기();
+else            return tmp;
         }
 
         var str_header = '[HWP Document File V' + headerString.version+'] 문서';
         var str = '';
         str += 문단읽기(0);
-        var 추가정보블록=추가정보();
-//        var 추가정보블록;
-        if(DEBUG) console.info('추가정보블록',추가정보블록);
-        HWP.추가정보블록 = 추가정보블록;
-            if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+        /**/
+        // 5000 문단(라인)이 넘어가면 스택오버플로 이슈로 재귀호출에서 반복호출로 변경함.
+        // RangeError: Maximum call stack size exceeded
+        while(1){ 
+            if(HWP.문단.글자수==0){ // 문단리스트의 끝
+//            if(depth==0 && HWP.문단.글자수==0){ // 문단리스트의 끝
+                console.log('depth',depth);
+                break;
+            }
+            str += 문단읽기(0);
+        }
+        /**/
+        if(GetByte.pos>=GetByte.uInt8Array.length){
+            var 추가정보블록=추가정보();
+    //        var 추가정보블록;
+            if(DEBUG) console.info('추가정보블록',추가정보블록);
+            HWP.추가정보블록 = 추가정보블록;
+                if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+        }
 
-        var _add = GetByte.pos==GetByte.uInt8Array.length?'완료':'오류'
-        _add += `(${GetByte.pos.format()}/${GetByte.uInt8Array.length.format()} Byte)`;
+        //var _add = GetByte.pos==GetByte.uInt8Array.length?'읽기완료':'읽기오류'
+        //_add += `(${GetByte.pos.format()}/${GetByte.uInt8Array.length.format()} Byte)`;
+        var _add = `(${GetByte.pos.format()}/${GetByte.uInt8Array.length.format()} Byte)`;
 //        var _add = !!추가정보블록?'완료':'오류'
 //        var _add = readError?'오류':'완료'
-        str_header+='/' +(line-1)+'라인  읽기' +_add+ '\n\n'
+        str_header+='/' +line.format()+'라인 ' +_add+ '\n\n'
 
 
         return str_header + str;
