@@ -8,7 +8,19 @@
     body {background-color:#181818; color:#bbbbbb;}
     pre {
         white-space: break-spaces;
-     /* white-space: pre-wrap; */
+        display: block;
+        font-family: monospace;
+        unicode-bidi: isolate;
+        white-space: pre;
+    }
+    pre span {
+        color : #666666;
+    }
+    /* ipad 1366*917*/
+    @media only screen and (min-device-width: 768px) and (max-device-width: 1024px) {
+        pre {
+        /**/font-size: 14pt;/**/
+        }
     }
   </style>
   <script src="kssmcode.js?v=<?=filemtime('kssmcode.js')?>"></script>
@@ -21,14 +33,12 @@
     var params = URLSearchParams && new URLSearchParams(document.location.search.substring(1));
     var url = params && params.get("url") && decodeURIComponent(params.get("url"));
 
-    var DEBUG = false;
+    var DEBUG = true;
+    var line = 0;
 
     function HWP(buffer){
          getByte = new GetByte(buffer);
-         GetByte.debug=DEBUG;
-        //HWP.getByte = getByte;
-        //var charbuf = [];
-        //var pos=0;
+         //GetByte.debug=DEBUG;
 
         function HeaderString(){ // 30 Byte -- 파일인식정보
             return {
@@ -102,22 +112,17 @@
             }
         }
 
-        //console.log(`[${getByte(24)}]`)
-        //console.log(`[${JSON.stringify(HeaderString())}]`)
         var headerString = HeaderString();
         HWP.headerString = headerString;
         //if(DEBUG)
-            console.log(headerString)
+            console.info(headerString) // 헤더스트링 정보
         if(headerString.text != 'HWP Document File V') return 'HWP V1.2, V1.5, V3.0 문서가 아님';
+        var str_header = '[HWP Document File V' + headerString.version+'] 문서';
         var fileHeader = FileHeader(headerString);
         HWP.fileHeader = fileHeader;
         //if(DEBUG)
-            console.log('fileHeader', fileHeader)
+            console.log('fileHeader', fileHeader) // 파일헤더 정보
         if(DEBUG) console.log(GetByte.pos)
-
-
-//        if(headerString.version.indexOf('1.2')==-1
-//           && headerString.version.indexOf('1.5')==-1) return 'HWP Document File V1.2, V1.5 문서만 지원함.\n ---> HWP Document File V' + headerString.version;
 
 
         function HWP1XRead(){  // HWP V1.x 용 문서 읽기
@@ -141,7 +146,7 @@
             var str = '';
             while (max < MAXHWPLINE - 1) {
 //            while (max < 6) { // DEBUG용
-                //console.log('max',max)
+//                console.log('max',max)
                 var textHeader = TextHeader();
                 //console.log('textHeader',textHeader)
                 var charnum = textHeader.num1 * 256 + textHeader.num2;
@@ -169,16 +174,19 @@
                     //pos++;
                     //if (pos > 253) break;
                 }
-//                console.log(str)
-/**/
                 max++;
             }
+            line = max; // 읽은라인 수
             return str;
         }
 
-//        GetByte.isHwp = true; // HWPChar 적용시작
         if(DEBUG) console.log('HWP1X',HWP1X)
-        if(HWP1X) return HWP1XRead();  // 1.x 용문서이면 읽어서 반환함 이후 취소
+        if(HWP1X){
+            var text = HWP1XRead();
+            var _add = `(${GetByte.pos.format()}<span>/</span>${GetByte.uInt8Array.length.format()} Byte)`;
+            str_header+=' <span>/</span> ' +line.format()+'라인 ' +_add+ ''
+            return str_header + '<hr>' + text;  // 1.x 용문서이면 읽어서 반환함 이후 취소
+        }
 
         function 문서요약정보(){ // 1008 Byte
             return {
@@ -199,7 +207,7 @@
         GetByte.isHwp = false; // HWPChar 적용해제
             HWP.문서요약 = 문서요약;
             //if(DEBUG) 
-                console.log('문서요약',문서요약);
+                console.info('문서요약',문서요약);
 //            console.log(GetByte.pos)
 //        }
         if(DEBUG) console.log(GetByte.pos)
@@ -210,15 +218,7 @@
             정보.ID = getByte(2,'int16');
             정보.길이 = getByte(2,'int16');
             for(i=0; i<정보.길이; i++) 정보.내용.push( getByte(1, 'int8') );
-            //정보.내용=getByte(정보.길이);
             return 정보;
-            /*
-            return {
-                ID  :getByte(2,'int16')
-               ,길이:getByte(2,'int16')
-               ,내용:''
-           }
-           */
         }
 
         if(DEBUG) console.log('fileHeader.정보블록길이', fileHeader.정보블록길이)
@@ -226,8 +226,6 @@
             GetByte.isHwp=false; // HWPChar 해제
             var 정보블럭=정보블럭정보();
             HWP.정보블럭 = 정보블럭;
-            //정보블럭.내용=getByte(28687);
-            //정보블럭.내용=GetByte.uInt8Array.slice(GetByte.pos, GetByte.pos+정보블럭.길이); // 정보블럭 내용은 다음에
             //if(DEBUG)
                 console.log('정보블럭',정보블럭);
             if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
@@ -439,8 +437,8 @@
             var 선종류값=['0:투명', '1:실선', '2:굵은 실선', '3:점선', '4:2중 실선'];
 
             return {
-                 줄:getByte('byte') // 내장 시트 기능을 위한 줄, 칸 일련 번호 (0에서 시작)
-                ,칸:getByte('byte') // 내장 시트 기능을 위한 줄, 칸 일련 번호 (0에서 시작)
+                 칸:getByte('byte') // 내장 시트 기능을 위한 줄, 칸 일련 번호 (0에서 시작)
+                ,줄:getByte('byte') // 내장 시트 기능을 위한 줄, 칸 일련 번호 (0에서 시작)
                 ,셀의색깔:getByte('word')
                 ,셀의위치:{가로:getByte('hunit'),세로:getByte('hunit')}
                 ,셀의크기:{가로:getByte('hunit'),세로:getByte('hunit')}
@@ -763,10 +761,11 @@
         }
 
         var readError = false;
-        var line = 0;
+        //var line = 0;
         var MAXLINE = 5;
         DEBUG = false;
         GetByte.debug=DEBUG;
+        GetByte.code=true;
         var depth=0;
         function 문단읽기(toNext){
  //           console.group('문단읽기')
@@ -785,7 +784,7 @@
             }
             */
 
-            //if(DEBUG)
+            if(DEBUG)
                 console.debug('>>>>>>line', line, 'depth', depth);
             var 문단 = 문단정보();
             HWP.문단 = 문단;
@@ -884,7 +883,8 @@
             }else{
                 if(DEBUG) GetByte.debug = false;
                 GetByte.isHwp = true; // HWPChar 적용시작
-                tmp += getByte(문단.글자수*2);
+                //tmp += getByte(문단.글자수*2);
+                for(var i=0; i<문단.글자수; i++) tmp += getByte('hchar');
                 if(DEBUG) console.log('tmp',tmp)
                 GetByte.isHwp = false; // HWPChar 적용해제
                 if(DEBUG) GetByte.debug = true;
@@ -895,67 +895,48 @@
 //console.log('[[[[[[[[[toNext]]]]]]]',toNext);
 //            return tmp+문단읽기(toNext);
 //            return tmp;
-if(toNext!=0)   return tmp+문단읽기();
-else            return tmp;
+            if(toNext!=0) return tmp+문단읽기();
+            else          return tmp;
         }
 
-        var str_header = '[HWP Document File V' + headerString.version+'] 문서';
-        var str = '';
-        str += 문단읽기(0);
-        /**/
+        var text = '';
+        text += 문단읽기(0);
         // 5000 문단(라인)이 넘어가면 스택오버플로 이슈로 재귀호출에서 반복호출로 변경함.
         // RangeError: Maximum call stack size exceeded
         while(1){ 
-            if(HWP.문단.글자수==0){ // 문단리스트의 끝
-//            if(depth==0 && HWP.문단.글자수==0){ // 문단리스트의 끝
-                console.log('depth',depth);
-                break;
-            }
-            str += 문단읽기(0);
+            if(HWP.문단.글자수==0) break // 문단리스트의 끝
+            text += 문단읽기(0);
         }
-        /**/
+        // 추가블록 읽기
         if(GetByte.pos>=GetByte.uInt8Array.length){
             var 추가정보블록=추가정보();
-    //        var 추가정보블록;
             if(DEBUG) console.info('추가정보블록',추가정보블록);
             HWP.추가정보블록 = 추가정보블록;
                 if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
         }
 
+        //HWP 문서정보
         //var _add = GetByte.pos==GetByte.uInt8Array.length?'읽기완료':'읽기오류'
         //_add += `(${GetByte.pos.format()}/${GetByte.uInt8Array.length.format()} Byte)`;
-        var _add = `(${GetByte.pos.format()}/${GetByte.uInt8Array.length.format()} Byte)`;
+        var _add = `(${GetByte.pos.format()}<span>/</span>${GetByte.uInt8Array.length.format()} Byte)`;
 //        var _add = !!추가정보블록?'완료':'오류'
 //        var _add = readError?'오류':'완료'
-        str_header+='/' +line.format()+'라인 ' +_add+ '\n\n'
+        str_header+='<span>/</span>' +line.format()+'라인 ' +_add+ '<hr>'
 
 
-        return str_header + str;
+        return str_header + text;
     }
 
-
-Uint8Array.prototype.findArr = function(start,findArr){
-    var isFind = false;
-    var idx = -1;
-    var jStart = 0;
-    for(var i=start; i<this.length; i++){
-        if(j == findArr.length){ isFind=true; break; }
-        for(var j=0; j<findArr.length; j++){
-            /*
-            if(this[i] == findArr[j]) {
-                idx = i;
-                jStart++;
-                break;
-            }
-            */
-            if(this[i+j] != findArr[j]) break;
-
-        }
-    }
-    if(isFind) idx = i-findArr.length+1;
-    return idx;
+function getC(pos){
+    GetByte.debug = true;
+    getByte(pos,'pos');
+    return getByte('hchar');
 }
-
+function g(type){
+    GetByte.debug = true;
+    type=type||'hchar';
+    return getByte(type);
+}
 
     var hwpFiles = [
     /* 0 */  "dos/C_Drv/COMM/I53/DOWN/프린세~2.HWP"  // v3.00
@@ -978,14 +959,14 @@ Uint8Array.prototype.findArr = function(start,findArr){
 //    url = 'load.php?file=DOS/C_Drv/MUSIC/MIDI/CAKEPRO/DOWN/요금.HWP';
     url = 'load.php?file=' + (url||'DOS/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP');
 
-console.log('url',url)
+    console.log('url',url)
     fetch(url)
         .then(rs=>{return rs.arrayBuffer();})
-        .then(buffer => hwp.innerText=HWP(buffer))
+        .then(buffer => hwp.innerHTML=HWP(buffer))
   </script>
 </head>
 <body>
-<div id=listDiv><pre role="img" aria-label="ASCII COW" id=hwp>&nbsp;</pre></div>
+<div id=listDiv><pre id=hwp>&nbsp;</pre></div>
 <div id=pageDiv></div>
 <div id=debug></div>
 </body>
