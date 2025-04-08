@@ -1,5 +1,7 @@
 # HWP2TEXT.js
 HWP 내용을 Text 로 추출하는 Javascript 모듈
+HWP Document File V1.0 V1.5 V2.0 V2.1 V3.0 지원
+HWP Document File V5.0 미지원(지원예정)
 
 # 기획
 - HWP 파일 내부의 텍스트를 추출하여 웹으로 볼 수 있는 모둘 개발.
