@@ -213,8 +213,19 @@
         function 정보블럭정보(){ // 가변
             var 정보={ID:0, 길이:0, 내용:[]};
             정보.ID = getByte(2,'int16');
+            정보.ID명 = ['책갈피 정보 블록','상호참조 정보 블록'][정보.ID]
             정보.길이 = getByte(2,'int16');
-            for(i=0; i<정보.길이; i++) 정보.내용.push( getByte(1, 'int8') );
+
+            if(정보.ID == 1){
+                for(i=0; i<정보.길이/38; i++){
+                    정보.내용.push( {
+                         책갈피이름:getByte('hchar',16).join('')
+                        ,책갈피종류:getByte('word')
+                        ,예약:getByte('dword')
+                    } );
+                }
+            } else
+                for(i=0; i<정보.길이; i++) 정보.내용.push( getByte(1, 'int8') );
             return 정보;
         }
 
@@ -426,14 +437,6 @@
             return info;
         }
         HWP.글자모양정보 = 글자모양정보;
-
-        function 추가정보(){
-            var info = {ID:0,길이:0,내용:[]};
-            info.ID   = getByte('dword');
-            info.길이 = getByte('dword');
-            info.내용 = getByteArray('byte',info.길이);
-            return info;
-        }
 
         function 셀정보(){ // 27 Byte
             var 선종류값=['0:투명', '1:실선', '2:굵은 실선', '3:점선', '4:2중 실선'];
@@ -818,10 +821,11 @@
         var readError = false;
         //var line = 0;
         var MAXLINE = 235;
-        DEBUG = false;
+//        DEBUG = true;
         GetByte.debug=DEBUG;
-        GetByte.code=false;
+//        GetByte.code=true;
         var depth=0;
+        var btnCount = 0;
         function 문단읽기(toNext){
  //           console.group('문단읽기')
 //console.log('[[[[[[[[[문단읽기시작toNext]]]]]]]',toNext);
@@ -845,7 +849,7 @@
             if(DEBUG)
                 console.debug('>>>>>>line', line, 'depth', depth);
             var 문단 = 문단정보();
-            HWP.문단 = 문단;
+            if(toNext==0) HWP.문단 = 문단;
             if(DEBUG) console.log('문단',문단);
             if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
             if(DEBUG) if(문단.글자수 && 문단.특수문자플래그) console.log('문단.특수문자플래그',문단.특수문자플래그, 문단.특수문자플래그.toString(2));
@@ -896,7 +900,8 @@
                             console.info('특수문자', 특수문자);
                         if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
 //                        if(ch=='13') str+='\n';
-                        if(식별코드== 6) tmp+=`[책갈피이름:${특수문자.책갈피이름}]`
+//                        if(식별코드== 6) tmp+=`[책갈피이름:${특수문자.책갈피이름}]`
+                        if(식별코드== 6) tmp+=`<a name="${특수문자.책갈피이름.trim()}">${특수문자.책갈피이름}</a>`;
                         if(식별코드== 9) tmp+='\t';
                         if(식별코드==10){
                             console.group('식별코드10처리')
@@ -936,22 +941,32 @@
 //                                }
 //                                tmp+='│'+문단Text;
 //                            }
-                            var html = '<table border=1>'
-                            html+='<tr>'
-                            for(var j=0; j<특수문자.정보.셀개수;j++){
-                                depth++;
-                                //tmp+=`[셀{${j}}]:`+문단읽기(1);
-                                var 문단Text = '<td>'+문단읽기(1).replace(/\r/g,'')+'</td>';
-                                console.log(j,문단Text, 문단Text.length,셀[j])
-                                if(readError) break;
-                                if(j){
-                                    if(셀[j-1].셀의위치.세로!=셀[j].셀의위치.세로){
-                                        문단Text='</tr><tr>'+문단Text;
-                                    }
+                            var html='';
+                            if(특수문자.정보.박스종류=='3=버튼'){
+                                for(var j=0; j<특수문자.정보.셀개수;j++){
+                                    var 문단Text = `<button onclick="건너뜀(${btnCount})">${문단읽기(1).replace(/\r/g,'')}</button>`;
+                                    btnCount++;
+                                    html+=문단Text;
+                                    if(readError) break;
                                 }
-                                html+=문단Text;
+                            } else {
+                                html = '<table border=1>'
+                                html+='<tr>'
+                                for(var j=0; j<특수문자.정보.셀개수;j++){
+                                    depth++;
+                                    //tmp+=`[셀{${j}}]:`+문단읽기(1);
+                                    var 문단Text = '<td>'+문단읽기(1).replace(/\r/g,'')+'</td>';
+                                    console.log(j,문단Text, 문단Text.length,셀[j])
+                                    if(readError) break;
+                                    if(j){
+                                        if(셀[j-1].셀의위치.세로!=셀[j].셀의위치.세로){
+                                            문단Text='</tr><tr>'+문단Text;
+                                        }
+                                    }
+                                    html+=문단Text;
+                                }
+                                html+='</tr></table>';
                             }
-                            html+='</tr></table>';
                             tmp+=html;
                             //console.debug('표/텍스트박스/수식/버튼/하이퍼텍스트 종료')
                             console.groupEnd();
@@ -1015,7 +1030,7 @@
         // 5000 문단(라인)이 넘어가면 스택오버플로 이슈로 재귀호출에서 반복호출로 변경함.
         // RangeError: Maximum call stack size exceeded
         while(!readError){ 
-            console.log('readError', readError);
+            if(DEBUG) console.log('readError', readError);
             if(GetByte.pos>GetByte.uInt8Array.length){
                 console.log('문서읽기 오류 : OFFSET 초과');
                 break;
@@ -1023,11 +1038,48 @@
             if(HWP.문단.글자수==0) break // 문단리스트의 끝
             text += 문단읽기(0);
         }
+
         // 추가블록 읽기
-        if(GetByte.pos>=GetByte.uInt8Array.length){
+        function 추가정보(){
+            var info = {ID:0,길이:0,내용:[]};
+            info.ID   = getByte('dword');
+            info.길이 = getByte('dword');
+            if(info.ID == 3){ //  하이퍼텍스트(HyperLink) 정보
+                for(var i=0; i<info.길이/617; i++){
+                    info.내용.push( {
+                         건너뛸파일이름:getByte('kchar', 256).join('') //  현재 파일의 책갈피라면 "\0"
+                        ,건너뛸책갈피:getByte('hchar', 16).join('')
+                        ,매크로:getByte('byte', 325) // ‘[문서의 처음]’은 실제 존재하지는 
+                                                     // 않지만, 사용되는 책갈피 이름
+                        ,종류:getByte('byte') // 0,1 = 글, 2 = HTML/ETC
+                        ,예약:getByte('byte',3)
+                    } );
+                }
+            }else
+                info.내용 = getByteArray('byte',info.길이);
+
+            return info;
+        }
+        if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+        if(GetByte.pos<GetByte.uInt8Array.length){
+            if(DEBUG) console.log('추가블록읽기')
             var 추가정보블록=추가정보();
             if(DEBUG) console.info('추가정보블록',추가정보블록);
             HWP.추가정보블록 = 추가정보블록;
+                if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
+        }
+        function 추가정보2(){
+            var info = {
+                 ID   : getByte('dword')
+                ,길이 : getByte('dword')
+            }
+            return info;
+        }
+        if(GetByte.pos<GetByte.uInt8Array.length){
+            if(DEBUG) console.log('추가블록#2 읽기')
+            var 추가정보블록2=추가정보2();
+            if(DEBUG) console.info('추가정보#2 블록',추가정보블록2);
+            HWP.추가정보블록2 = 추가정보블록2;
                 if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
         }
 
@@ -1041,16 +1093,55 @@
         if(문서요약.주제     ) _add += `\n주  제 : ${문서요약.주제}`;
         if(문서요약.지은이   ) _add += `\n지은이 : ${문서요약.지은이}`;
         if(문서요약.날짜     ) _add += `\n날  짜 : ${문서요약.날짜}`;
-        if(문서요약.키워드[0]) _add += `\n키워드[0] : ${문서요약.키워드[0]}`;
-        if(문서요약.키워드[1]) _add += `\n키워드[1] : ${문서요약.키워드[1]}`;
-        if(문서요약.기타[0]  ) _add += `\n기타[0] : ${문서요약.기타[0]}`;
-        if(문서요약.기타[1]  ) _add += `\n기타[1] : ${문서요약.기타[1]}`;
-        if(문서요약.기타[2]  ) _add += `\n기타[2] : ${문서요약.기타[2]}`;
+        if(문서요약.키워드[0]) _add += `\n키워드 : ${문서요약.키워드[0]}`;
+        if(문서요약.키워드[1]) _add += `\n         ${문서요약.키워드[1]}`;
+        if(문서요약.기타[0]  ) _add += `\n기  타 : ${문서요약.기타[0]}`;
+        if(문서요약.기타[1]  ) _add += `\n         ${문서요약.기타[1]}`;
+        if(문서요약.기타[2]  ) _add += `\n         ${문서요약.기타[2]}`;
+        if(정보블럭){
+            if(정보블럭.ID==1){
+                _add += '\n<select name="책갈피" onChange="책갈피이동(this)">';
+                _add +=   '<option value="" selected>책갈피선택';
+                for(var i=0; i<정보블럭.내용.length; i++){
+                    _add += `<option value="${정보블럭.내용[i].책갈피이름.trim()}">${정보블럭.내용[i].책갈피이름}`;
+                }
+                _add += '</select>';
+            }
+        } 
         str_header+='<span>/</span>' +line.format()+'라인 ' +_add+ '<hr>'
 
 
         return str_header + text;
     }
+
+
+    function 건너뜀(idx){
+        console.debug('링크이동idx',idx)
+        console.debug(`추가정보블록.내용[${idx}].건너뛸파일이름`, HWP.추가정보블록.내용[idx].건너뛸파일이름);
+        console.debug(`추가정보블록.내용[${idx}].건너뛸책갈피`, HWP.추가정보블록.내용[idx].건너뛸책갈피);
+        console.debug('filepath',filepath);
+        if(HWP.추가정보블록.내용[idx].건너뛸파일이름==''){
+            location.href='#'+HWP.추가정보블록.내용[idx].건너뛸책갈피;
+            return;
+        }
+        var arrFilepath = filepath.split('/');
+        arrFilepath.pop();
+        arrFilepath.push(HWP.추가정보블록.내용[idx].건너뛸파일이름)
+        filepath = arrFilepath.join('/');
+        console.debug('filepath',filepath);
+        var file = `hwp.html?url=${encodeURIComponent(filepath)}#${HWP.추가정보블록.내용[idx].건너뛸책갈피}`;
+        console.debug(file);
+        location.href = file;
+    }
+    function 책갈피이동(obj){
+//        window.obj = obj;
+//        console.log(`[${obj.value}]`);
+//        console.log(obj.selectedIndex);
+        if(obj.value!=""){
+            location.href='#'+obj.value;
+        }
+    }
+
 
 function getC(pos){
     GetByte.debug = true;
@@ -1105,6 +1196,7 @@ function n(){
 //    url = 'load.php?file=DOS/C_Drv/LANG/TC/README.HWP';
 //    url = 'load.php?file=DOS/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP';
 //    url = 'load.php?file=DOS/C_Drv/MUSIC/MIDI/CAKEPRO/DOWN/요금.HWP';
+    filepath = url;
     tmp = 'load.php?file=' + (url||'DOS/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP');
     url = 'load.php?file=' + encodeURIComponent(url||'DOS/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP');
 
@@ -1112,7 +1204,15 @@ function n(){
     console.log('url',url)
     fetch(url)
         .then(rs=>{return rs.arrayBuffer();})
-        .then(buffer => hwp.innerHTML=HWP(buffer))
+        .then(buffer =>{
+            hwp.innerHTML=HWP(buffer)
+            // 책갈피가 있으면 1초뒤 이동
+            if(document.location.hash!=''){
+                setTimeout(()=>{
+                    location.href=document.location.hash;
+                },1000);
+            }
+        })
   </script>
 </head>
 <body>
