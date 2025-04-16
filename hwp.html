@@ -27,6 +27,7 @@
   <!-- <script src="jszip.min.js?v=<?=filemtime('jszip.min.js')?>"></script> -->
   <!-- <script src="jszip.js?v=<?=filemtime('jszip.js')?>"></script> -->
   <script src="pako.js?v=<?=filemtime('pako.js')?>"></script>
+  <script src="lib.js?v=<?=filemtime('lib.js')?>"></script>
   <script>
     Number.prototype.format = function(){return new String(this).replace(/\B(?<!\.\d*)(?=(\d{3})+(?!\d))/g, ",")}
 
@@ -762,7 +763,8 @@
                                 ,건너뜀:getByteArray('hunit',2) // 그림에서 실제 표시를 시작할 위치 (가로, 세로)
                                 ,확대비율:getByteArray('word',2) // 0 = 고정, 이외 = 퍼센트 단위 비율 (가로, 세로)
                                 //,그림파일이름:null // 그림 종류가 0, 1, 2일 때만 사용됨.
-                                ,그림파일이름:getByte('kchar',256) // 그림 종류가 0, 1, 2일 때만 사용됨.
+                                //,그림파일이름:getByte('kchar',256) // 그림 종류가 0, 1, 2일 때만 사용됨.
+                                ,그림파일이름:getByte(256) // 그림 종류가 0, 1, 2일 때만 사용됨.
                                 ,밝기:getByte('byte') // 워터마크: 그림의 밝기 (-100 - 100)
                                 ,명암: getByte('byte') // 워터마크: 그림의 명암 (-100 - 100)
                                 ,그림효과:['0:원래 그림으로', '1:그레이 스케일', '2:흑백으로'][getByte('byte')]
@@ -774,8 +776,11 @@
                             if(info.정보.그림종류==67) {
                               info.정보.보정 = getByteArray('byte',9);  break;// 이게 왜 필요한걸까??????
                             }
-                            info.정보.추가정보 = getByte('byte', info.정보.추가정보길이); break;
-                            // 이후 코드 버림
+//                            console.info('info.정보.추가정보 > 0',info.정보.추가정보,info.정보.추가정보 > 0)
+                            if(info.정보.추가정보길이 > 0)
+                                info.정보.추가정보 = getByte('byte', info.정보.추가정보길이);
+                                break;
+                            // 이후 코드 버림 - 왜 안돼지?????
 
 
 //                          if(info.정보.그림종류=='3:Drawing Object'){
@@ -1181,6 +1186,22 @@
                 if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
         }
 
+
+        // 쿠키에 위치 값이 있으면 스크롤 이동
+        setTimeout(()=>{
+            var _scroll = getCookie('scroll');
+            //alert(_scroll)
+            if(_scroll!=''){
+                var s = _scroll.split(',');
+                //alert(s)
+                console.log("--------------------------------------------------------------------------"
+                           ,_scroll, s);
+                window.scrollTo(s[0], s[1]);
+            }
+        },500); // 0.5초
+
+
+
         //HWP 문서정보
         //var _add = GetByte.pos==GetByte.uInt8Array.length?'읽기완료':'읽기오류'
         //_add += `(${GetByte.pos.format()}/${GetByte.uInt8Array.length.format()} Byte)`;
@@ -1207,7 +1228,6 @@
             }
         } 
         str_header+='<span>/</span>' +line.format()+'라인 ' +_add+ '<hr>'
-
 
         return str_header + text;
     }
@@ -1283,6 +1303,12 @@ function n(){
     hwp.innerHTML+=HWP.문단읽기(0);
 }
 
+    window.addEventListener("load", function(e){
+        hwp.addEventListener("resise", function(e){
+            console.log('pre#hwp ReSized!!')
+        });
+    });
+
     var hwpFiles = [
     /* 0 */  "dos/C_Drv/COMM/I53/DOWN/프린세~2.HWP"  // v3.00
     /* 1 */ ,"DOS/C_Drv/COMM/I60/DOWN/DOWNBACK/PBRI0010.HWP" // v3.00
@@ -1305,6 +1331,7 @@ function n(){
     filepath = url;
     tmp = 'load.php?file=' + (url||'DOS/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP');
     url = 'load.php?file=' + encodeURIComponent(url||'DOS/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP');
+    
 
     console.log('tmp',tmp)
     console.log('url',url)
