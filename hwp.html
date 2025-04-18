@@ -30,13 +30,17 @@
   <script src="lib.js?v=<?=filemtime('lib.js')?>"></script>
   <script>
     Number.prototype.format = function(){return new String(this).replace(/\B(?<!\.\d*)(?=(\d{3})+(?!\d))/g, ",")}
+    Array.prototype.getStr = function(){return this.slice(0,this.indexOf('')).join('');} // null 이전까지 배열값 문자열로 합침
 
     var params = URLSearchParams && new URLSearchParams(document.location.search.substring(1));
     var url = params && params.get("url") && decodeURIComponent(params.get("url"));
 
-    var DEBUG = true;
+    var DEBUG = false;
     if(document.location.pathname=='/hwp/hwp.html') DEBUG = false; // 디버그해제
-    var line = 0;
+    var line = 0; // 읽은 문단수
+    var readError = false; // 문단읽는중 에러발생
+    var MAXLINE = 0; // 읽을 최대 문단수
+
     function HWP(buffer){
          getByte = new GetByte(buffer);
          //GetByte.debug=DEBUG;
@@ -497,6 +501,7 @@
                 ,보호:getByte('byte') // 보호를 위해 셀로 들어갈 수 없도록 할지 여부
             }
         }
+        HWP.셀정보 = 셀정보;
 
         function 틀헤더정보(){ // 
             return {
@@ -510,13 +515,24 @@
         }
         function 하이퍼텍스트정보(){ // 617 Byte // 4 + 617 x n
             return {
-               /*길이:getByte('dword') // 617 x n = 하이퍼텍스트 정보 길이
-              ,*/건널뛸파일이름:getByteArray('hchar',256) // 현재 파일의 책갈피라면 "\0"
-                ,건너뛀책갈피:getByteArray('hchar',16) // ‘[문서의 처음]’은 실제 존재하지는 
-                                                       // 않지만, 사용되는 책갈피 이름
+                 건너뛸파일이름:getByte('kchar',256)
+                ,건너뛸책갈피:getByte('hchar',16)
                 ,매크로:getByteArray('byte',325) // 도스용에서 실행할 매크로
                 ,종류:getByte('byte') // 0,1 = 글, 2 = HTML
                 ,예약:getByteArray('byte',3) // 
+            }
+        }
+        function 프리젠테이션설정정보() { // 406 Byte
+            return {
+                 미리정의된set번호:getByte('sdword') // -1이면 사용자 정의
+                ,선굵기:getByte('hunit32')
+                ,선색깔:getByte('dword') // 0 - 7, 글자 모양의 글자색 순서
+                ,흰색여부:getByte('dword') // bit 0 = 검은색 글자를 흰색으로 할 것인지 여부
+                                           // bit 1-31 = 예약
+                ,기본속성:그리기개체기본속성()
+                ,회전속성:그리기개체회전속성()
+                ,그라데이션속성:그리기개체그라데이션속성()
+                ,비트맵패턴속성:그리기개체비트맵패턴속성()
             }
         }
         function 그리기개체기본속성(){ // 44 Byte
@@ -567,6 +583,15 @@
                 ,가로중심:getByte('dword') // 가로 중심 (0 - 100%)
                 ,세로중심:getByte('dword') // 세로 중심 (0 - 100%)
                 ,단계:getByte('dword') // 밀도 (0 - 100)
+            }
+        }
+        function 그리기개체비트맵패턴속성(){ // 278 Byte
+            return {
+                 시작위치:getByte('hunit32',2) // 틀로부터 비트맵 패턴이 출력되는 좌측 상단에 대한 상대 위치
+                ,끝위치:getByte('hunit32',2) // 틀로부터 비트맵 패턴이 출력되는 우측 하단에 대한 상대 위치
+                ,파일이름:getByte('hchar',261) // 비트맵 패턴의 파일 이름 (조합형)
+                ,옵션:getByte('byte') // 0 = 외부 파일
+                                      // 2 = embedded image
             }
         }
         function 그리기개체공통헤더정보(){ // 최대 430 Byte
@@ -671,11 +696,68 @@
                      ,종류:['0 = 제목차례', '1 = 표차례', '2 = 그림차례'][getByte('hunit')] // 
                      ,특수문자코드2:getByte(2,'int16')} //늘 25이다
             } else if(식별코드==26){ // 찾아보기 표시
+                GetByte.isHwp = true; // HWPChar 적용시작
+                GetByte.noneExt = true; // 특수문자 처리 하지 않음.
                 info={특수문자코드1:식별코드 // 늘 26이다
-                     ,첫번째키워드:getByte('hchar',60) // 
-                     ,두번째키워드:getByte('hchar',60) // 
+//                     ,첫번째키워드:getByte('hchar',60) // 
+//                     ,두번째키워드:getByte('hchar',60) // 
+                     ,첫번째키워드:getByte(60*2)
+                     ,두번째키워드:getByte(60*2)
                      ,페이지번호:getByte('word') // Page Num
                      ,특수문자코드2:getByte(2,'int16')} //늘 26이다
+                GetByte.noneExt = false;
+                GetByte.isHwp = false; // HWPChar 적용해제
+                info.키워드조합 = info.첫번째키워드 + (info.두번째키워드?'/':'') + info.두번째키워드;
+            } else if(식별코드==28){ // 개요 모양/번호
+                info={특수문자코드1:식별코드 // 늘 28이다
+                     ,종류:getByte('word') // 0 = 개요 모양, 1 = 개요 번호
+                     ,형태:getByte('byte') // 0 = 사용자 정의 개요
+                                           // 1-5 = 글에 정의된 개요 (메뉴 순서대로)
+                                           // 128 = 사용자 정의 개요 및 불릿
+                                           // 129-132 = 글에 정의된 불릿 (메뉴 순서대로)
+                                           //  *. 사용자 정의에서 개요 문자만을 사용했다면 0이 
+                                           // 되며, 불릿문자를 섞어서 사용하면 128이 된다.
+                     ,단계:getByte('byte') // 현재 개요 번호의 단계
+                     ,개요번호:getByte('word',7) // 각 단계별 개요 번호.  0부터 시작. 불릿일 때는 
+                                                 // 번호는 매겨지지만, 사용되지는 않는다.
+                                                 // 예: 1.3.2.4 ☞ 0 2 1 3 0 0 0
+                     ,사용자정의:getByte('hchar',7) // 0 - 12 = 메뉴에 나타난 순서대로 개요의 형태
+                                                    // 128    = 모양 없음
+                                                    // 이외   =  불릿에 사용될 문자가 저장된다.
+                                                    // 예: 1. 1.1. 가. ○ -> 12 12 5 0x343b
+                     ,장식문자:[getByte('hchar',2) // 사용자 정의 개요 및 불릿일 때 앞, 뒤에 장식할 문자.
+                               ,getByte('hchar',2) //  hchar array[7][2]
+                               ,getByte('hchar',2)
+                               ,getByte('hchar',2)
+                               ,getByte('hchar',2)
+                               ,getByte('hchar',2)
+                               ,getByte('hchar',2)]
+                     ,특수문자코드2:getByte(2,'int16')} //늘 28이다
+            } else if(식별코드==29){ // 상호참조
+                info={특수문자코드1:식별코드 // 늘 29이다
+                     ,자료구조길이:getByte('word') // 46 + (참조 내용 길이 n)
+                     ,특수문자코드2:getByte(2,'int16') //늘 29이다
+                     ,종류:['0 = 대상', '1 = 참조 이용'][getByte('byte')]
+                     ,참조종류:null  // 0=쪽번호, 1=각주번호, 2= 미주번호
+                                     // 3=그림번호. 4=표번호, 5=수식번호,
+                                     // 6=개요번호
+                     ,참조내용길이:0 // 대상의 경우 n
+                     ,예약:null
+                     ,참조내용:null} // 참조 내용 길이만큼의 내용이 따라 온다.
+                if(info.종류=='1 = 참조 이용'){
+                    info.참조종류 = getByte('word');
+                    info.참조종류설명 = ['0=쪽번호', '1=각주번호', '2=미주번호',
+                                         '3=그림번호', '4=표번호', '5=수식번호',
+                                         '6=개요번호'][info.참조종류]||'';
+                    info.참조내용길이 = getByte('word');
+                    info.참조내용=getByte('hchar',info.참조내용길이/2);
+                }
+            } else if(식별코드==30){ // 상호참조
+                info={특수문자코드1:식별코드 // 늘 30이다
+                     ,특수문자코드2:getByte(2,'int16')} //늘 30이다
+            } else if(식별코드==31){ // 상호참조
+                info={특수문자코드1:식별코드 // 늘 31이다
+                     ,특수문자코드2:getByte(2,'int16')} //늘 31이다
             } else {
                 info={특수문자코드1:식별코드
                      ,정보길이     :getByte('dword') // n
@@ -901,13 +983,11 @@
             }
             return info;
         }
+        HWP.예약특수문자형식=예약특수문자형식;
 
 
-
-        var readError = false;
-        //var line = 0;
-        var MAXLINE = 235;
-        DEBUG = true;
+        //MAXLINE = 1886; // 읽을 최대 문단수
+        DEBUG = false;
         if(document.location.pathname=='/hwp/hwp.html') DEBUG = false; // 디버그해제
         GetByte.debug=DEBUG;
         GetByte.code=true;
@@ -926,11 +1006,12 @@
                 toNext=0;
                 return tmp;
             }
-            /** /
+            /**/
             if(line==MAXLINE-3) DEBUD=true;;
             if(DEBUG) if(line>=MAXLINE){
-                console.debug('디버깅중-강제종료함 line',line,GetByte.pos, GetByte.uInt8Array.length);
+                console.debug('디버깅중-강제종료함(문단읽기) line',line,GetByte.pos, GetByte.uInt8Array.length);
                 readError=true; // offset 초과시 강제종료
+                toNext=0;
                 return tmp;
             }
             /**/
@@ -969,6 +1050,10 @@
                 //console.info(`headerString.version[${headerString.version}]`);
                 //if(headerString.version=='2.10 ') 문단.글자수 = 문단.글자수||10;
                 for(var i=0; i<문단.글자수; i++){
+                    if(DEBUG && line>=MAXLINE){
+                        console.debug('디버깅중-강제종료함.문단.특수문자플래그 line',line,GetByte.pos, GetByte.uInt8Array.length);
+                        break;
+                    }
                     if(GetByte.pos>GetByte.uInt8Array.length){
                         console.log('문서읽기 오류 : OFFSET 초과');
                         //HWP.문단.글자수==0;
@@ -1004,61 +1089,72 @@
 //                        if(식별코드== 6) tmp+=`[책갈피이름:${특수문자.책갈피이름}]`
                         if(식별코드== 6) tmp+=`<a name="${특수문자.책갈피이름.trim()}">${특수문자.책갈피이름}</a>`;
                         if(식별코드== 9) tmp+='\t';
-                        if(식별코드==10){
+                        if(식별코드==10){ // '[표/텍스트박스/수식/버튼/하이퍼텍스트]:\n'
                             console.group('식별코드10처리')
-//                            tmp+='[표/텍스트박스/수식/버튼/하이퍼텍스트]:\n';
-//                            for(var j=0; j<특수문자.정보.셀개수;j++){
-//                                var 셀=셀정보();
-//                                console.debug(`셀[${j}]`, 셀);
-//                                //tmp+=`[셀{${i}}]:`;
-//                            }
-//                            for(var j=0; j<특수문자.정보.셀개수;j++){
-//                                //console.debug(`셀[${j}]콜`);
-//                                depth++;
-//                                tmp+=`[셀{${j}}]:`+문단읽기(1);
-//                                //tmp+='│'+문단읽기(1).replace(/\r/g,'│')+'';
-//                                //console.debug(`셀[${j}]종료`);
-//                            }
-//                            tmp+='[표/텍스트박스/수식/버튼/하이퍼텍스트]:\n';
                             var 셀=[];
                             for(var j=0; j<특수문자.정보.셀개수;j++){
                                 if(readError) break;
                                 셀.push( 셀정보() );
                                 //console.debug(`셀[${j}]`, 셀[j]);
                             }
-//                            for(var j=0; j<특수문자.정보.셀개수;j++){
-//                                depth++;
-//                                //tmp+=`[셀{${j}}]:`+문단읽기(1);
-//                                var 문단Text = 문단읽기(1).replace(/\r/g,'');
-//                                console.log(j,문단Text, 문단Text.length,셀[j])
-//                                var 셀크기 = Math.floor(셀[j].셀의크기.가로/180);
-//                                for(var k=0; k<셀크기-문단Text.length; k++){
-//                                    문단Text+=' ';
-//                                }
-//                                if(j){
-//                                    if(셀[j-1].셀의위치.세로!=셀[j].셀의위치.세로){
-//                                        tmp+='│\r';
-//                                    }
-//                                }
-//                                tmp+='│'+문단Text;
-//                            }
                             var html='';
                             if(특수문자.정보.박스종류=='3=버튼'){
                                 for(var j=0; j<특수문자.정보.셀개수;j++){
+                                    if(readError) break; // 에러 발생시 강제 종료
                                     var 문단Text = `<button onclick="건너뜀(${btnCount})">${문단읽기(1)}</button>`;
                                     btnCount++;
                                     html+=문단Text;
-                                    if(readError) break;
                                 }
+                            } else { // 셀이 70개가 넘으면 그림(?)으로 간주함.
+//                            } else if(특수문자.정보.셀개수>70){ // 셀이 70개가 넘으면 그림(?)으로 간주함.
+                                function borderStyle(o){
+                                    var r=''
+                                    if     (o=='0:투명') r='1px #232323 dotted';
+                                    else if(o=='1:실선') r='1px gray solid';
+                                    return r;
+                                }
+                                function getSize(s){return Math.floor(s/16*10)/10;} // 소숫점1자리
+                                function get음영(n){
+                                    var str = '';
+                                    if(n||0 >0) str = `background-color:rgb(${(255-n)},${(255-n)},${(255-n)});`;
+                                    return str;
+                                }
+                                html ='<div style="position: relative;'
+                                html+='width:'+getSize(특수문자.정보.박스크기[0])+'px;';
+                                html+='height:'+getSize(특수문자.정보.박스크기[1])+'px;';
+                                html+='">';
+                                for(var j=0; j<특수문자.정보.셀개수;j++){
+                                    if(readError) break; // 에러 발생시 강제종료
+                                    depth++;
+                                    var cellstyle='';
+                                    var o셀=셀[j];
+                                    var 문단Text = 문단읽기(1);
+                                    html+='<div style="position: absolute;';
+                                    if((o셀.가운데로||0)==1) html+='display: flex;align-items: center;justify-content: center;';
+                                    html+='border-bottom:'+borderStyle(o셀.선종류.아래)+';';
+                                    html+='border-right:'+borderStyle(o셀.선종류.오른쪽)+';';
+                                    html+='border-left:'+borderStyle(o셀.선종류.왼쪽)+';';
+                                    html+='border-top:'+borderStyle(o셀.선종류.위)+';';
+                                    html+='top:'+getSize(o셀.셀의위치.세로)+'px;';
+                                    html+='left:'+getSize(o셀.셀의위치.가로)+'px;';
+                                    html+='width:'+getSize(o셀.셀의크기.가로)+'px;';
+                                    html+='height:'+getSize(o셀.셀의크기.세로)+'px;';
+                                    html+=get음영(o셀.음영비율);
+                                    html+= '">' + 문단Text + '</div>';
+                                    console.log(j,문단Text, 문단Text.length,셀[j]);
+                                }
+                                html+='</div>';
+/*
                             } else {
                                 html = '<table border=1>'
                                 html+='<tr>'
                                 for(var j=0; j<특수문자.정보.셀개수;j++){
+                                    if(readError) break; // 에러 발생시 강제종료
                                     depth++;
-                                    //tmp+=`[셀{${j}}]:`+문단읽기(1);
-                                    var 문단Text = '<td>'+문단읽기(1).replace(/\r/g,'')+'</td>';
+                                    var cellstyle='';
+                                    if(셀[j].가운데로==1) cellstyle=' style="text-align:center;"';
+                                    var 문단Text = '<td'+cellstyle+'>'+문단읽기(1)+'</td>';
                                     console.log(j,문단Text, 문단Text.length,셀[j])
-                                    if(readError) break;
                                     if(j){
                                         if(셀[j-1].셀의위치.세로!=셀[j].셀의위치.세로){
                                             문단Text='</tr><tr>'+문단Text;
@@ -1067,6 +1163,7 @@
                                     html+=문단Text;
                                 }
                                 html+='</tr></table>';
+*/
                             }
                             tmp+=html;
                             //console.debug('표/텍스트박스/수식/버튼/하이퍼텍스트 종료')
@@ -1075,13 +1172,15 @@
                             //tmp+문단읽기(depth+1); // 캡션문단읽기
                             //console.groupEnd();
                         }
-                        if(식별코드==11) tmp+='[11그림]';
-                        if(식별코드==15) tmp+='[15숨은설명]:';
-                        if(식별코드==16) tmp+='[16'+특수문자.정보.구분.replace(/\d\:/,'')+']:';
-                        if(식별코드==17) tmp+='[17'+특수문자.정보.종류.replace(/\d[ ]\=[ ]/,'')+']';
-                        if(식별코드==18) tmp+=`[18번호:${특수문자.종류.replace(/\d\=/,'')}{${특수문자.번호값}}]`;
-                        if(식별코드==22) tmp+=`[22메일머지 표시:${특수문자.필드이름}]`;
-                        if(식별코드==25) tmp+=`[25${특수문자.종류}]`;
+                        if(식별코드==11) tmp+='<span>[11그림]</span>';
+                        if(식별코드==15) tmp+='<span>[15숨은설명]:</span>';
+                        if(식별코드==16) tmp+='<span>[16'+특수문자.정보.구분.replace(/\d\:/,'')+']:</span>';
+                        if(식별코드==17) tmp+='<span>[17'+특수문자.정보.종류.replace(/\d[ ]\=[ ]/,'')+']</span>';
+                        if(식별코드==18) tmp+=`<span>[18번호:${특수문자.종류.replace(/\d\=/,'')}{${특수문자.번호값}}]</span>`;
+                        if(식별코드==20) tmp+=`<span>[20쪽번호]</span>`;
+                        if(식별코드==22) tmp+=`<span>[22메일머지 표시:${특수문자.필드이름}]</span>`;
+                        if(식별코드==25) tmp+=`<span>[25${특수문자.종류}]</span>`;
+                        if(식별코드==26) tmp+=`<span>[26찾아보기 표시:${특수문자.키워드조합}]</span>`;
                         //if(문단.앞문단모양==0) 
 //                        if(ch==14) getByteArray('hchar',40);
                         if(식별코드==10 || 식별코드==11 || 식별코드==15 || 식별코드==16 || 식별코드==17){
@@ -1131,7 +1230,10 @@
         // 5000 문단(라인)이 넘어가면 스택오버플로 이슈로 재귀호출에서 반복호출로 변경함.
         // RangeError: Maximum call stack size exceeded
         while(!readError){ 
-            if(DEBUG) console.log('readError', readError);
+            if(DEBUG && line>=MAXLINE){
+                console.debug('디버깅중-강제종료함while line',line,GetByte.pos, GetByte.uInt8Array.length);
+                break;
+            }
             if(GetByte.pos>GetByte.uInt8Array.length){
                 console.log('문서읽기 오류 : OFFSET 초과');
                 break;
@@ -1146,21 +1248,21 @@
             var info = {ID:0,길이:0,내용:[]};
             info.ID   = getByte('dword');
             info.길이 = getByte('dword');
-            if(info.ID == 3){ //  하이퍼텍스트(HyperLink) 정보
-                for(var i=0; i<info.길이/617; i++){
-//                    info.내용.push( {
-//                         건너뛸파일이름:getByte('kchar', 256).join('') //  현재 파일의 책갈피라면 "\0"
-//                        ,건너뛸책갈피:getByte('hchar', 16).join('')
-//                        ,매크로:getByte('byte', 325) // ‘[문서의 처음]’은 실제 존재하지는 
-//                                                     // 않지만, 사용되는 책갈피 이름
-//                        ,종류:getByte('byte') // 0,1 = 글, 2 = HTML/ETC
-//                        ,예약:getByte('byte',3)
-//                    } );
-                    info.내용.push( 하이퍼텍스트정보() );
-                }
-            }else
-                info.내용 = getByteArray('byte',info.길이);
-
+            switch(info.ID){
+                case 3 : //  하이퍼텍스트(HyperLink) 정보
+                        for(var i=0; i<info.길이/617; i++){
+                            info.내용.push( 하이퍼텍스트정보() );
+                        }
+                        break;
+                case 4 : //  프리젠테이션 설정 정보
+                        for(var i=0; i<info.길이/398; i++){
+                            info.내용.push( 프리젠테이션설정정보() );
+                        }
+                        break;
+                default :
+                        info.내용 = getByteArray('byte',info.길이);
+                        break;
+            }
             return info;
         }
         if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
@@ -1189,13 +1291,9 @@
 
         // 쿠키에 위치 값이 있으면 스크롤 이동
         setTimeout(()=>{
-            var _scroll = getCookie('scroll');
-            //alert(_scroll)
+            var _scroll = getCookie(_fn)||'';
             if(_scroll!=''){
                 var s = _scroll.split(',');
-                //alert(s)
-                console.log("--------------------------------------------------------------------------"
-                           ,_scroll, s);
                 window.scrollTo(s[0], s[1]);
             }
         },500); // 0.5초
@@ -1235,32 +1333,32 @@
 
     function 건너뜀(idx){
         console.debug('링크이동idx',idx)
-        console.debug(`추가정보블록.내용[${idx}].건너뛸파일이름`, HWP.추가정보블록.내용[idx].건너뛸파일이름);
-        console.debug(`추가정보블록.내용[${idx}].건너뛸책갈피`, HWP.추가정보블록.내용[idx].건너뛸책갈피);
+        var 건너뛸파일이름 = HWP.추가정보블록.내용[idx].건너뛸파일이름.getStr();
+        var 건너뛸책갈피   = HWP.추가정보블록.내용[idx].건너뛸책갈피.getStr();
+        console.debug(`추가정보블록.내용[${idx}].건너뛸파일이름`, 건너뛸파일이름);
+        console.debug(`추가정보블록.내용[${idx}].건너뛸책갈피`, 건너뛸책갈피);
         console.debug('filepath',filepath);
-        if(HWP.추가정보블록.내용[idx].건너뛸파일이름==''){
-            location.href='#'+HWP.추가정보블록.내용[idx].건너뛸책갈피;
+        if(건너뛸파일이름==''){ // 건너뛸파일명 없으면 문서내 이동
+            location.href='#'+건너뛸책갈피;
             return;
         }
-        if(HWP.추가정보블록.내용[idx].건너뛸파일이름!=''){
-            if(HWP.추가정보블록.내용[idx].건너뛸파일이름[0]=='#'){
-                location.href='#'+HWP.추가정보블록.내용[idx].건너뛸파일이름;
+        if(건너뛸파일이름!=''){ // 건너뜇파일이름이 #~ 형식이면 문서내 이동
+            if(건너뛸파일이름[0]=='#'){
+                location.href='#'+건너뛸파일이름;
                 return;
             }
         }
+        // 건너뛸파일이름, 건너뛸책갈피 다 있으면 해당파일의 책갈피로 이동
         var arrFilepath = filepath.split('/');
         arrFilepath.pop();
-        arrFilepath.push(HWP.추가정보블록.내용[idx].건너뛸파일이름)
+        arrFilepath.push(건너뛸파일이름)
         filepath = arrFilepath.join('/');
         console.debug('filepath',filepath);
-        var file = `hwp.html?url=${encodeURIComponent(filepath)}#${HWP.추가정보블록.내용[idx].건너뛸책갈피}`;
+        var file = `hwp.html?url=${encodeURIComponent(filepath)}#${건너뛸책갈피}`;
         console.debug(file);
         location.href = file;
     }
     function 책갈피이동(obj){
-//        window.obj = obj;
-//        console.log(`[${obj.value}]`);
-//        console.log(obj.selectedIndex);
         if(obj.value!=""){
             location.href='#'+obj.value;
         }
@@ -1268,18 +1366,20 @@
 
 
 //// 디버깅용
-function getc(pos){
+function getc(pos,type){ // 한글자 읽기
     GetByte.debug = true;
     getByte(pos,'pos');
-    return getByte('hchar');
+    type=type||'hchar'
+    return getByte(type);
 }
-function g(type){
+function g(type){ // 한글자 계속읽기
     GetByte.debug = true;
     type=type||'hchar';
     return getByte(type);
 }
+// BufferArray 내 배열값 위치 찾기
 function f(idx,arr){return GetByte.uInt8Array.findArr(idx,arr)};
-function m(pos){
+function m(pos){ // 문단읽기
     if(pos||false) getByte(pos,'pos');
     var 문단 = HWP.문단정보();
     console.log('문단',문단);
@@ -1299,9 +1399,10 @@ function m(pos){
     }
 
 }
-function n(){
+function n(){ // 문단읽기
     hwp.innerHTML+=HWP.문단읽기(0);
 }
+//// 디버깅용
 
     window.addEventListener("load", function(e){
         hwp.addEventListener("resise", function(e){
@@ -1309,29 +1410,16 @@ function n(){
         });
     });
 
-    var hwpFiles = [
-    /* 0 */  "dos/C_Drv/COMM/I53/DOWN/프린세~2.HWP"  // v3.00
-    /* 1 */ ,"DOS/C_Drv/COMM/I60/DOWN/DOWNBACK/PBRI0010.HWP" // v3.00
-    /* 2 */ ,"DOS/C_Drv/LANG/TC/README.HWP"
-    /* 3 */ ,"dos/C_Drv/LANG/TC/TURBOLIB.HWP"
-    /* 4 */ ,"DOS/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP"
-    /* 5 */ ,"dos/C_Drv/MUSIC/DATA/OCP/UPDATE.HWP"
-    /* 6 */ ,"DOS/C_Drv/MUSIC/MIDI/CAKEPRO/DOWN/요금.HWP"  // v3.00
-    /* 7 */ ,"dos/C_Drv/OFFICE/HWP30/PATCH/README.HWP"     // v3.00 (안됨)
-    /* 8 */ ,"DOS/C_Drv/이야기방/새글/엽기적인그녀/엽기적인그녀 2부.hwp" // v3.00
-    /* 9 */ ,"txt/책 ebook 전자책/환타지/하이엘프의숲/FOREST0.HWP" // v3.00
-    /*10 */ ,"한글문서파일형식_배포용문서_revision1.2.hwp" // v3.00
-        ];
+    window.addEventListener("scroll", function(e){
+        // 스크롤하면 쿠키에 파일명으로 위치 저장
+        // -> 책갈피 기능
+        setCookie(_fn, scrollX+','+scrollY); 
+    });
 
-//    url = 'load.php?file=' + encodeURIComponent(url||hwpFiles[8]);
-//    url = 'load.php?file=DOS/C_Drv/COMM/I60/DOWN/DOWNBACK/PBRI0010.HWP';
-//    url = 'load.php?file=DOS/C_Drv/LANG/TC/README.HWP';
-//    url = 'load.php?file=DOS/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP';
-//    url = 'load.php?file=DOS/C_Drv/MUSIC/MIDI/CAKEPRO/DOWN/요금.HWP';
     filepath = url;
+    _fn = filepath.split('/').pop();
     tmp = 'load.php?file=' + (url||'DOS/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP');
     url = 'load.php?file=' + encodeURIComponent(url||'DOS/C_Drv/MUSIC/DATA/OCP/OCPLAY.HWP');
-    
 
     console.log('tmp',tmp)
     console.log('url',url)
