@@ -35,11 +35,13 @@
     var params = URLSearchParams && new URLSearchParams(document.location.search.substring(1));
     var url = params && params.get("url") && decodeURIComponent(params.get("url"));
 
-    var DEBUG = false;
+    var DEBUG = true;
     if(document.location.pathname=='/hwp/hwp.html') DEBUG = false; // 디버그해제
+    var filepath = url;
+    var _fn = filepath.split('/').pop();
     var line = 0; // 읽은 문단수
     var readError = false; // 문단읽는중 에러발생
-    var MAXLINE = 0; // 읽을 최대 문단수
+    var MAXLINE = 10000; // 읽을 최대 문단수
 
     function HWP(buffer){
          getByte = new GetByte(buffer);
@@ -201,7 +203,7 @@
         }
 
         function 문서요약정보(){ // 1008 Byte
-            return {
+            var info = {
                  제목   : getByte(56*2) // HWPChar 형식으로 읽음 2바이트 문자가 1개의 문자임.
                 ,주제   : getByte(56*2)
 //                ,주제   : getByte('hchar',56)
@@ -209,7 +211,18 @@
                 ,날짜   : getByte(56*2)
                 ,키워드 : [getByte(56*2),getByte(56*2)]
                 ,기타   : [getByte(56*2),getByte(56*2),getByte(56*2)]
+                ,출력용 : ''
             };
+            if(info.제목     ) info.출력용 += `\n제  목 : ${info.제목}`;
+            if(info.주제     ) info.출력용 += `\n주  제 : ${info.주제}`;
+            if(info.지은이   ) info.출력용 += `\n지은이 : ${info.지은이}`;
+            if(info.날짜     ) info.출력용 += `\n날  짜 : ${info.날짜}`;
+            if(info.키워드[0]) info.출력용 += `\n키워드 : ${info.키워드[0]}`;
+            if(info.키워드[1]) info.출력용 += `\n         ${info.키워드[1]}`;
+            if(info.기타[0]  ) info.출력용 += `\n기  타 : ${info.기타[0]}`;
+            if(info.기타[1]  ) info.출력용 += `\n         ${info.기타[1]}`;
+            if(info.기타[2]  ) info.출력용 += `\n         ${info.기타[2]}`;
+            return info;
         }
 
         /* V3.X 문서의 경우 */
@@ -269,15 +282,7 @@
                 err = e;
 
                 var _add = `(${GetByte.pos.format()}<span>/</span>${GetByte.uInt8Array.length.format()} Byte)`;
-                if(문서요약.제목     ) _add += `\n제  목 : ${문서요약.제목}`;
-                if(문서요약.주제     ) _add += `\n주  제 : ${문서요약.주제}`;
-                if(문서요약.지은이   ) _add += `\n지은이 : ${문서요약.지은이}`;
-                if(문서요약.날짜     ) _add += `\n날  짜 : ${문서요약.날짜}`;
-                if(문서요약.키워드[0]) _add += `\n키워드 : ${문서요약.키워드[0]}`;
-                if(문서요약.키워드[1]) _add += `\n         ${문서요약.키워드[1]}`;
-                if(문서요약.기타[0]  ) _add += `\n기  타 : ${문서요약.기타[0]}`;
-                if(문서요약.기타[1]  ) _add += `\n         ${문서요약.기타[1]}`;
-                if(문서요약.기타[2]  ) _add += `\n         ${문서요약.기타[2]}`;
+                _add += 문서요약.출력용;
                 return str_header+=' -> 손상된 압축 파일\n'+ e +_add+ '<hr>'
             }
         }
@@ -733,6 +738,7 @@
                                ,getByte('hchar',2)
                                ,getByte('hchar',2)]
                      ,특수문자코드2:getByte(2,'int16')} //늘 28이다
+                info.종류설명=['개요 모양', '개요 번호'][info.종류];
             } else if(식별코드==29){ // 상호참조
                 info={특수문자코드1:식별코드 // 늘 29이다
                      ,자료구조길이:getByte('word') // 46 + (참조 내용 길이 n)
@@ -945,6 +951,7 @@
                             }
                             break;
                 case 15 : info.정보 = null // 숨은설명 - info.정보길이:예약
+                          info.예약 = getByte('byte', 8);
                             break;
                 case 16 : info.정보 = {    // 머리말/꼬리말 - info.정보길이:예약
                                  예약:getByteArray('byte',8)
@@ -987,7 +994,7 @@
 
 
         //MAXLINE = 1886; // 읽을 최대 문단수
-        DEBUG = false;
+        DEBUG = true;
         if(document.location.pathname=='/hwp/hwp.html') DEBUG = false; // 디버그해제
         GetByte.debug=DEBUG;
         GetByte.code=true;
@@ -1006,7 +1013,7 @@
                 toNext=0;
                 return tmp;
             }
-            /**/
+            /** /
             if(line==MAXLINE-3) DEBUD=true;;
             if(DEBUG) if(line>=MAXLINE){
                 console.debug('디버깅중-강제종료함(문단읽기) line',line,GetByte.pos, GetByte.uInt8Array.length);
@@ -1181,10 +1188,8 @@
                         if(식별코드==22) tmp+=`<span>[22메일머지 표시:${특수문자.필드이름}]</span>`;
                         if(식별코드==25) tmp+=`<span>[25${특수문자.종류}]</span>`;
                         if(식별코드==26) tmp+=`<span>[26찾아보기 표시:${특수문자.키워드조합}]</span>`;
-                        //if(문단.앞문단모양==0) 
-//                        if(ch==14) getByteArray('hchar',40);
+                        if(식별코드==28) tmp+=`<span>[28${특수문자.종류설명}]</span>`;
                         if(식별코드==10 || 식별코드==11 || 식별코드==15 || 식별코드==16 || 식별코드==17){
-//                        if(식별코드==11 || 식별코드==15 || 식별코드==16 || 식별코드==17)
                             console.group('캡션문단??')
                             depth++;
                             tmp+=문단읽기(1);
@@ -1306,6 +1311,7 @@
         var _add = `(${GetByte.pos.format()}<span>/</span>${GetByte.uInt8Array.length.format()} Byte)`;
 //        var _add = !!추가정보블록?'완료':'오류'
 //        var _add = readError?'오류':'완료'
+/*
         if(문서요약.제목     ) _add += `\n제  목 : ${문서요약.제목}`;
         if(문서요약.주제     ) _add += `\n주  제 : ${문서요약.주제}`;
         if(문서요약.지은이   ) _add += `\n지은이 : ${문서요약.지은이}`;
@@ -1315,6 +1321,8 @@
         if(문서요약.기타[0]  ) _add += `\n기  타 : ${문서요약.기타[0]}`;
         if(문서요약.기타[1]  ) _add += `\n         ${문서요약.기타[1]}`;
         if(문서요약.기타[2]  ) _add += `\n         ${문서요약.기타[2]}`;
+*/
+        _add += 문서요약.출력용;
         if(정보블럭){
             if(정보블럭.ID==1){
                 _add += '\n<select name="책갈피" onChange="책갈피이동(this)">';
