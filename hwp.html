@@ -13,6 +13,7 @@
         unicode-bidi: isolate;
         /*white-space: pre;*/
     }
+    /* 특수문자처리 색지정 */
     pre span {
         color : #666666;
     }
@@ -51,6 +52,8 @@
 
     // 글자색/음영색등 HWP에서 사용되는 색상
     var 색 = ['검정', '파랑', '초록', '청록', '빨강', '자주', '노랑', '흰색'];
+//    var COLOR = ['black', 'blue', 'green', '#01787c', 'red', 'purple', 'yellow', 'white'];
+    var COLOR = ['#bbbbbb', '#0039a6', 'green', '#01787c', 'red', 'purple', 'yellow', 'white'];
 
     // HWP 파일에서 Text 추출하는 모듈
     function HWP(buffer){
@@ -223,6 +226,7 @@
                 ,기타   : [getByte(56*2),getByte(56*2),getByte(56*2)]
                 ,출력용 : ''
             };
+            // 문서정보 출력용 조합
             if(info.제목     ) info.출력용 += `\n제  목 : ${info.제목}`;
             if(info.주제     ) info.출력용 += `\n주  제 : ${info.주제}`;
             if(info.지은이   ) info.출력용 += `\n지은이 : ${info.지은이}`;
@@ -251,13 +255,15 @@
         function 정보블럭정보(){ // 가변
             var 정보={ID:0, 길이:0, 내용:[]};
             정보.ID = getByte(2,'int16');
-            정보.ID명 = ['책갈피 정보 블록','상호참조 정보 블록'][정보.ID]
+            정보.ID명 = [0,'책갈피 정보 블록','상호참조 정보 블록'][정보.ID]
             정보.길이 = getByte(2,'int16');
 
-            if(정보.ID == 1){
+            if(정보.ID == 1){  // 책갈피
                 for(i=0; i<정보.길이/38; i++){
                     정보.내용.push( {
-                         책갈피이름:getByte('hchar',16).join('')
+//                         책갈피이름:getByte('hchar',16).join('')
+//                         책갈피이름:getByte(16*2)
+                         책갈피이름:getHWPString(16*2)
                         ,책갈피종류:getByte('word')
                         ,예약:getByte('dword')
                     } );
@@ -321,7 +327,7 @@
             정보.기타.nfonts = getByte(2, 'int16');
             for(var i=0; i<정보.기타.nfonts; i++) 정보.기타.fontnames.push( getByte(40) );
             if(headerString.version == '2.00 '){
-                //  Hwp2.0 Format은 Language type이 5개씩
+                //  Hwp2.0 Format은 Language type이 5개씩임.
             }else{
                 정보.기호.nfonts = getByte(2, 'int16');
                 for(var i=0; i<정보.기호.nfonts; i++) 정보.기호.fontnames.push( getByte(40) );
@@ -386,7 +392,6 @@
             for(var i=0; i<info.개수; i++) {
                 info.정보.push({이름:getByte(20)
                                ,글자모양:글자모양자료구조()
-//                               ,문단모양:getByte(187)});
                                ,문단모양:문단모양자료구조()});
             }
 
@@ -715,6 +720,28 @@
             //if(info.정보2의길이) 문단리스트의내용=문단읽기(1);
             return info;
         }
+        function 배경이미지정보(){ // 332 - 8(ID{4Byte} + 크기{4Byte}) = 324 Byte
+            var info = {
+                 고정정보:getByte('dword') // 무조건 1
+                ,Tag:getByte('dword')
+                ,그림밝기:getByte('dword') // brightness 그림 밝기
+                ,그림명암:getByte('dword') // contrast 그림 명암
+                ,그림효과:getByte('dword') // effect 그림 효과
+                ,프린트반영여부:getByte('dword') // isPrint 프린트 시 반영할지
+                ,이미지파일명:getByte(256) // picname 이미지 파일명
+                ,이미지타입:getByte('dword') // pictype 이미지 type 2 : 삽입그림 0 : 연결그림
+                ,컬러:getByte('dword') // color = 0x10000000
+                ,DisplayOption:getByte('dword') // display option 0 : 바둑판 1 : 가운데 3 : 쪽 크기로
+                ,PageOption:getByte('dword') // page option 0 : 양쪽 4 : 홀수 쪽 3 : 짝수 쪽
+                ,sXY:{sx:getByte('dword'),sy:getByte('dword')}
+                ,가로세로크기:{width:getByte('dword'),height:getByte('dword')}
+                ,reserved:[getByte('dword'),getByte('dword')]
+                ,삽입그림크기:getByte('dword') // n = 삽입그림 크기
+                ,삽입된이미지데이터:[]
+            }
+            info.삽입된이미지데이터 = getByte('byte',info.삽입그림크기);
+            return info;
+        }
 
         function 예약특수문자형식(식별코드){ // 8 + n Byte
             if(식별코드>31) return null;
@@ -867,10 +894,8 @@
                                 ,여백:[[getByte('shunit'),getByte('shunit'),getByte('shunit'),getByte('shunit')]   // [0-2][] = 바깥/안/셀 여백
                                       ,[getByte('shunit'),getByte('shunit'),getByte('shunit'),getByte('shunit')]   // [][0-3] = 왼쪽/오른쪽/위/아래 여백
                                       ,[getByte('shunit'),getByte('shunit'),getByte('shunit'),getByte('shunit')]]  // ※ [1][3] = 안여백-아래여백
-                                //,박스크기:getByteArray('hunit',2) // 가로, 세로
                                 ,박스크기:getByte('hunit',2) // 가로, 세로
                                 ,캡션크기:getByteArray('hunit',3) // 가로, 세로, 길이
-                                //,전체크기:getByteArray('hunit',2) // 박스 크기 + 캡션 + 여백
                                 ,전체크기:getByte('hunit',2) // 박스 크기 + 캡션 + 여백
                                 ,예약2:getByteArray('byte',4)
                                 ,줄간격보호:['0:보호하지않음','1:보호함'][getByte('byte')]
@@ -939,7 +964,7 @@
                             if(info.정보.추가정보길이 > 0)
                                 info.정보.추가정보 = getByte('byte', info.정보.추가정보길이);
                                 break;
-                            // 이후 코드 버림 - 왜 안돼지?????
+                            // 이후 코드 버림 - 왜 안되지?????
 
 ////////////////////////////////////////////////////////////////////////////////
 //                          if(info.정보.그림종류=='3:Drawing Object'){
@@ -1073,9 +1098,9 @@
         function 추가정보(){
             var info = {ID:0,길이:0,내용:[]};
             info.ID   = getByte('dword');
-            info.길이 = getByte('dword');
             switch(info.ID){
                 case 1 : // 파일에 포함된 그림정보
+                        info.길이 = getByte('dword');
                         //info.이름 = getByte('echar',16);
                         info.이름 = getByte(16);
                         //info.포멧 = getByte('echar',16);
@@ -1083,17 +1108,33 @@
                         info.내용 = getByte('byte',info.길이-32);
                         //info.내용 = getByteArray('byte',info.길이-32);
                         break;
+                case 2 : // OLE 정보
+                        info.길이 = getByte('dword');
+                        info.내용 = getByteArray('byte',info.길이);
+                        break;
                 case 3 : //  하이퍼텍스트(HyperLink) 정보
+                        info.길이 = getByte('dword');
                         for(var i=0; i<info.길이/617; i++){
                             info.내용.push( 하이퍼텍스트정보() );
                         }
                         break;
                 case 4 : //  프리젠테이션 설정 정보
+                        info.길이 = getByte('dword');
                         for(var i=0; i<info.길이/398; i++){
                             info.내용.push( 프리젠테이션설정정보() );
                         }
                         break;
+                case 5 : //  예약 정보
+                        // 예약정보는 길이를 포함하지 않음.
+                        break;
+                case 6 : //  예약 정보
+                        info.길이 = getByte('dword');
+                        info.내용 = 배경이미지정보();
+                        break;
+//                case 0x100 : //  256 : 테이블 확장 (셀 필드 이름) 정보
+//                case 0x101 : //  257 : 누름틀 필드 이름 정보
                 default :
+                        info.길이 = getByte('dword');
                         info.내용 = getByteArray('byte',info.길이);
                         break;
             }
@@ -1105,8 +1146,23 @@
             var info = {
                  ID   : getByte('dword')
                 ,길이 : getByte('dword')
+                ,내용 : null
             }
+            info.내용 = getByteArray('byte',info.길이);
             return info;
+        }
+        var 글자색상 = '';
+        function 글자색(문자){
+                    if(HWP.문단.글자모양포함){ // 개별 글자에 대한 스타일 지정시
+                        if(HWP.글자모양[i].flag==0){
+                            글자색상 = COLOR[ HWP.글자모양[i].글자모양.글자색 ];
+                        }
+                    }else{ // 대표글자모양 참조
+                        글자색상 = COLOR[ HWP.문단.대표글자모양.글자색 ];
+                    }
+                    // 기본값이면 채색하지 않음.
+                    if(글자색상!="#bbbbbb") `<font color="${글자색상}">${문자}</font>`;
+                    else                    문자;
         }
 
 
@@ -1171,7 +1227,23 @@
                 if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
             }
 
+            var 글자색상 = '';
+            function 글자색(문자,idx){
+                if(문자=='\r') return 문자;
+                //if(문자==' ') return 문자;
+                if(문단.글자모양포함){ // 개별 글자에 대한 스타일 지정시
+                    if(글자모양[idx].flag==0){
+                        글자색상 = COLOR[ 글자모양[idx].글자모양.글자색 ];
+                    }
+                }else{ // 대표글자모양 참조
+                    글자색상 = COLOR[ 문단.대표글자모양.글자색 ];
+                }
+                // 기본값이면 채색하지 않음.
+                if(글자색상!="#bbbbbb") return `<font color="${글자색상}">${문자}</font>`;
+                else                    return 문자;
+            }
 
+            var 색상='';
             if(문단.특수문자플래그){
                 //console.info(`headerString.version[${headerString.version}]`);
                 //if(headerString.version=='2.10 ') 문단.글자수 = 문단.글자수||10;
@@ -1227,15 +1299,22 @@
                             }
                             var html='';
                             if(특수문자.정보.박스종류=='3=버튼'){
+                                // HWP 는 기본적으로 1/1800 인치 단위를 사용함. 이를 픽셀단위 임의 환산함.
+                                function getSize(s){return Math.floor(s/10*10)/10;} // 소숫점1자리
                                 for(var j=0; j<특수문자.정보.셀개수;j++){
                                     if(readError) break; // 에러 발생시 강제 종료
-                                    var 문단Text = `<button onclick="건너뜀(${btnCount})">${문단읽기(1)}</button>`;
+                                    var o셀=셀[j];
+                                    //var 문단Text = `<button onclick="건너뜀(${btnCount})">${문단읽기(1)}</button>`;
+                                    //var 문단Text = `<button style="width:${getSize(o셀.셀의크기.가로)}px;" onclick="건너뜀(${btnCount})">${문단읽기(1)}</button>`;
+                                    var 문단Text = `<button style="width:${getSize(o셀.셀의크기.가로)}px;height:${getSize(o셀.셀의크기.세로)}px;" onclick="건너뜀(${btnCount})">${문단읽기(1)}</button>`;
                                     btnCount++;
                                     html+=문단Text;
                                 }
-                            } else { // 셀이 70개가 넘으면 그림(?)으로 간주함.
-//                            } else if(특수문자.정보.셀개수>70){ // 셀이 70개가 넘으면 그림(?)으로 간주함.
-                                function borderStyle(o){
+                            } else { // 버튼이 아니면 셀 처리함
+                                // iPad 의 경우 폰트크기를 키웠으므로 셀 크기 비율을 10으로 설정함.
+                                // HWP 는 기본적으로 1/1800 인치 단위를 사용함. 이를 픽셀단위 임의 환산함.
+                                function getSize(s){return Math.floor(s/(isiPad?10:16)*10)/10;} // 소숫점1자리
+                                function borderStyle(o){ // 셀 외곽선 스타일
                                     var r=''
                                     if     (o=='0:투명') r='1px #232323 dotted';
                                     else if(o=='1:실선') r='1px gray solid';
@@ -1243,8 +1322,6 @@
                                     else if(o=="4:2중 실선") r='1px gray solid'; // 
                                     return r;
                                 }
-                                // iPad 의 경우 폰트크기를 키웠으므로 셀 크기 비율을 10으로 설정함.
-                                function getSize(s){return Math.floor(s/(isiPad?10:16)*10)/10;} // 소숫점1자리
                                 function get음영(n){
                                     var str = '';
                                     if(n||0 >0) str = `background-color:rgb(${(255-n)},${(255-n)},${(255-n)});`;
@@ -1271,7 +1348,7 @@
                                     html+='width:'+getSize(o셀.셀의크기.가로)+'px;';
                                     html+='height:'+getSize(o셀.셀의크기.세로)+'px;';
                                     html+=get음영(o셀.음영비율);
-                                    html+= '">' + 문단Text + '</div>';
+                                    html+= 'flex-wrap: wrap;">' + 문단Text + '</div>';
                                     console.log(j,문단Text, 문단Text.length,셀[j]);
                                 }
                                 html+='</div>';
@@ -1324,7 +1401,20 @@
                             console.groupEnd(); // console.group('캡션문단??')
                         }
                     }else{
+                        /*
+                        if(문단.글자모양포함){ // 개별 글자에 대한 스타일 지정시
+                            if(글자모양[i].flag==0){
+                                색상 = COLOR[ 글자모양[i].글자모양.글자색 ];
+                            }
+                        }else{ // 대표글자모양 참조
+                            색상 = COLOR[ 문단.대표글자모양.글자색 ];
+                        }
+                        // 기본값이면 채색하지 않음.
+                        if(색상!="#bbbbbb") ch=`<font color="${색상}">${ch}</font>`;
+
                         tmp+=ch;
+                        */
+                        tmp+=글자색(ch,i);
                     }
                 }
             }else{
@@ -1334,7 +1424,20 @@
                 for(var i=0; i<문단.글자수; i++){
                     var _ch = getByte('hchar');
                     if(_ch == '더 읽을게 없습니다.') break;
-                    tmp += _ch.replace(/</g,'&lt;'); // HTML TAG
+                    _ch.replace(/</g,'&lt;'); // HTML TAG
+                    /*
+                    if(문단.글자모양포함){ // 개별 글자에 대한 스타일 지정시
+                        if(글자모양[i].flag==0){
+                            색상 = COLOR[ 글자모양[i].글자모양.글자색 ];
+                        }
+                    }else{ // 대표글자모양 참조
+                        색상 = COLOR[ 문단.대표글자모양.글자색 ];
+                    }
+                    // 기본값이면 채색하지 않음.
+                    if(색상!="#bbbbbb") _ch=`<font color="${색상}">${_ch}</font>`;
+                    tmp += _ch;
+                    */
+                    tmp += 글자색(_ch,i);
                 }
                 if(DEBUG) console.log('tmp',tmp)
                 //GetByte.isHwp = false; // HWPChar 적용해제
@@ -1430,10 +1533,6 @@
 
     function 건너뜀(idx){
         console.debug('링크이동idx',idx)
-//        var 건너뛸파일이름 = HWP.추가정보블록.내용[idx].건너뛸파일이름.getStr();
-//        var 건너뛸책갈피   = HWP.추가정보블록.내용[idx].건너뛸책갈피.getStr();
-//        var 건너뛸파일이름 = HWP.추가정보블록.내용[idx].건너뛸파일이름.join('');
-//        var 건너뛸책갈피   = HWP.추가정보블록.내용[idx].건너뛸책갈피.join('');
         var 건너뛸파일이름 = HWP.추가정보블록.내용[idx].건너뛸파일이름;
         var 건너뛸책갈피   = HWP.추가정보블록.내용[idx].건너뛸책갈피;
         console.debug(`추가정보블록.내용[${idx}].건너뛸파일이름`, 건너뛸파일이름);
