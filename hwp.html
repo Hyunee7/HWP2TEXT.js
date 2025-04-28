@@ -423,14 +423,14 @@
                 ,글자색  :getByte('byte') // 0 ～ 7, 메뉴 순서 대로 *
                 ,글자색설명:null
                 ,음영비율:getByte('byte') // 0% ～ 100%
-                ,속성    :getByte('byte') // bit 0 = 이탤릭
-                                          // bit 1 = 진하게
-                                          // bit 2 = 밑줄
-                                          // bit 3 = 외곽선
-                                          // bit 4 = 그림자
-                                          // bit 5 = 위첨자
-                                          // bit 6 = 아래첨자
-                                          // bit 7 = 글꼴에 어울리는 빈 칸
+                ,속성    :getByte('byte') // bit 0 = 이탤릭 0x01
+                                          // bit 1 = 진하게 0x02
+                                          // bit 2 = 밑줄   0x04
+                                          // bit 3 = 외곽선 0x08
+                                          // bit 4 = 그림자 0x10
+                                          // bit 5 = 위첨자 0x20
+                                          // bit 6 = 아래첨자 0x40
+                                          // bit 7 = 글꼴에 어울리는 빈 칸 0x80
                 ,예약    :getByteArray('byte',4)
             }
             info.음영색설명 = 색[info.음영색];
@@ -565,11 +565,11 @@
         function 하이퍼텍스트정보(){ // 617 Byte // 4 + 617 x n
             return {
 //                 건너뛸파일이름:getByte('kchar',256)
-//                 건너뛸파일이름:getByte(256)
-                 건너뛸파일이름:getHWPString(256)
+                 건너뛸파일이름:getByte(256)
+//                 건너뛸파일이름:getHWPString(256)
 //                 건너뛸파일이름:getByte('hstring',256/2)
 //                ,건너뛸책갈피:getByte('hchar',16)
-//                ,건너뛸책갈피:getByte(16)
+//                ,건너뛸책갈피:getByte(16*2)
                 ,건너뛸책갈피:getHWPString(16*2)
 //                ,건너뛸책갈피:getByte('estring',16)
                 ,매크로:getByteArray('byte',325) // 도스용에서 실행할 매크로
@@ -1151,20 +1151,6 @@
             info.내용 = getByteArray('byte',info.길이);
             return info;
         }
-        var 글자색상 = '';
-        function 글자색(문자){
-                    if(HWP.문단.글자모양포함){ // 개별 글자에 대한 스타일 지정시
-                        if(HWP.글자모양[i].flag==0){
-                            글자색상 = COLOR[ HWP.글자모양[i].글자모양.글자색 ];
-                        }
-                    }else{ // 대표글자모양 참조
-                        글자색상 = COLOR[ HWP.문단.대표글자모양.글자색 ];
-                    }
-                    // 기본값이면 채색하지 않음.
-                    if(글자색상!="#bbbbbb") `<font color="${글자색상}">${문자}</font>`;
-                    else                    문자;
-        }
-
 
 
 
@@ -1228,9 +1214,11 @@
             }
 
             var 글자색상 = '';
-            function 글자색(문자,idx){
+            var 글자속성 = '';
+            function 글자꾸미기(문자,idx){
                 if(문자=='\r') return 문자;
                 //if(문자==' ') return 문자;
+                // 글자 색상
                 if(문단.글자모양포함){ // 개별 글자에 대한 스타일 지정시
                     if(글자모양[idx].flag==0){
                         글자색상 = COLOR[ 글자모양[idx].글자모양.글자색 ];
@@ -1239,8 +1227,27 @@
                     글자색상 = COLOR[ 문단.대표글자모양.글자색 ];
                 }
                 // 기본값이면 채색하지 않음.
-                if(글자색상!="#bbbbbb") return `<font color="${글자색상}">${문자}</font>`;
-                else                    return 문자;
+                if(글자색상!="#bbbbbb") 문자 = `<font color="${글자색상}">${문자}</font>`;
+//                else                    return 문자;
+                // 글자 속성
+                if(문단.글자모양포함){ // 개별 글자에 대한 스타일 지정시
+                    if(글자모양[idx].flag==0){
+                        글자속성 = 글자모양[idx].글자모양.속성
+                    }
+                }
+                if(글자속성){
+                    switch(글자속성){
+                        case 0x01 : 문자 = `<i>${문자}</i>`; break;
+                        case 0x02 : 문자 = `<b>${문자}</b>`; break;
+                        case 0x04 : 문자 = `<u>${문자}</u>`; break;
+                      //case 0x08 : 문자 = `문자`; break; // 외곽선
+                      //case 0x10 : 문자 = `<i>${문자}</i>`; break; // 그림자
+                        case 0x20 : 문자 = `<sup>${문자}</sup>`; break;
+                        case 0x40 : 문자 = `<sub>${문자}</sub>`; break;
+                      //case 0x80 : 문자 = `문자`; break; // 외곽선
+                    }
+                }
+                return 문자;
             }
 
             var 색상='';
@@ -1414,7 +1421,7 @@
 
                         tmp+=ch;
                         */
-                        tmp+=글자색(ch,i);
+                        tmp+=글자꾸미기(ch,i);
                     }
                 }
             }else{
@@ -1437,7 +1444,7 @@
                     if(색상!="#bbbbbb") _ch=`<font color="${색상}">${_ch}</font>`;
                     tmp += _ch;
                     */
-                    tmp += 글자색(_ch,i);
+                    tmp += 글자꾸미기(_ch,i);
                 }
                 if(DEBUG) console.log('tmp',tmp)
                 //GetByte.isHwp = false; // HWPChar 적용해제
