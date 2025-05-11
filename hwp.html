@@ -37,6 +37,11 @@
     // 숫자 세자리 컴마
     Number.prototype.format = function(){return new String(this).replace(/\B(?<!\.\d*)(?=(\d{3})+(?!\d))/g, ",")}
     Array.prototype.getStr = function(){return this.slice(0,this.indexOf('')).join('');} // null 이전까지 배열값 문자열로 합침
+    Array.prototype.toBase64 = function(){
+        var binary = '';
+        this.forEach( item=>binary+=String.fromCharCode(item) );
+        return window.btoa( binary );
+    }
 
     var params = URLSearchParams && new URLSearchParams(document.location.search.substring(1));
     var url = params && params.get("url") && decodeURIComponent(params.get("url"));
@@ -54,6 +59,7 @@
     var 색 = ['검정', '파랑', '초록', '청록', '빨강', '자주', '노랑', '흰색'];
 //    var COLOR = ['black', 'blue', 'green', '#01787c', 'red', 'purple', 'yellow', 'white'];
     var COLOR = ['#bbbbbb', '#0039a6', 'green', '#01787c', 'red', 'purple', 'yellow', 'white'];
+    var 그림파일들=[] // HWP문서에 포함된 그림파일명들
 
     // HWP 파일에서 Text 추출하는 모듈
     function HWP(buffer){
@@ -569,7 +575,7 @@
 //                 건너뛸파일이름:getHWPString(256)
 //                 건너뛸파일이름:getByte('hstring',256/2)
 //                ,건너뛸책갈피:getByte('hchar',16)
-//                ,건너뛸책갈피:getByte(16*2)
+//                ,건너뛸책갈피:getByte(16)
                 ,건너뛸책갈피:getHWPString(16*2)
 //                ,건너뛸책갈피:getByte('estring',16)
                 ,매크로:getByteArray('byte',325) // 도스용에서 실행할 매크로
@@ -963,7 +969,9 @@
 //                            console.info('info.정보.추가정보 > 0',info.정보.추가정보,info.정보.추가정보 > 0)
                             if(info.정보.추가정보길이 > 0)
                                 info.정보.추가정보 = getByte('byte', info.정보.추가정보길이);
-                                break;
+
+                            if(info.정보.그림파일이름!='') 그림파일들.push(info.정보.그림파일이름);
+                            break;
                             // 이후 코드 버림 - 왜 안되지?????
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1325,6 +1333,8 @@
                                     var r=''
                                     if     (o=='0:투명') r='1px #232323 dotted';
                                     else if(o=='1:실선') r='1px gray solid';
+                                    else if(o=='2:굵은 실선') r='1px #888888 solid';
+                                    else if(o=='3:점선') r='1px #444444 dotted';
                                     //else if(o=="4:2중 실선") r='3px gray double'; // 표현이 안됨
                                     else if(o=="4:2중 실선") r='1px gray solid'; // 
                                     return r;
@@ -1359,35 +1369,11 @@
                                     console.log(j,문단Text, 문단Text.length,셀[j]);
                                 }
                                 html+='</div>';
-/*
-                            } else {
-                                html = '<table border=1>'
-                                html+='<tr>'
-                                for(var j=0; j<특수문자.정보.셀개수;j++){
-                                    if(readError) break; // 에러 발생시 강제종료
-                                    depth++;
-                                    var cellstyle='';
-                                    if(셀[j].가운데로==1) cellstyle=' style="text-align:center;"';
-                                    var 문단Text = '<td'+cellstyle+'>'+문단읽기(1)+'</td>';
-                                    console.log(j,문단Text, 문단Text.length,셀[j])
-                                    if(j){
-                                        if(셀[j-1].셀의위치.세로!=셀[j].셀의위치.세로){
-                                            문단Text='</tr><tr>'+문단Text;
-                                        }
-                                    }
-                                    html+=문단Text;
-                                }
-                                html+='</tr></table>';
-*/
                             }
                             tmp+=html;
-                            //console.debug('표/텍스트박스/수식/버튼/하이퍼텍스트 종료')
                             console.groupEnd(); // console.group('식별코드10처리')
-                            //console.group('캡션문단')
-                            //tmp+문단읽기(depth+1); // 캡션문단읽기
-                            //console.groupEnd();
                         }
-                        if(식별코드==11) tmp+='<span>[11그림]</span>';
+                        if(식별코드==11) tmp+=`<span>[11그림${특수문자.정보.그림파일이름==''?'':'{'+특수문자.정보.그림파일이름+'}'}]</span>${특수문자.정보.그림파일이름==''?'':'imgtag'+특수문자.정보.그림파일이름}`;
                         if(식별코드==15) tmp+='<span>[15숨은설명시작]</span><label>'+문단읽기(1)+'</label><span>[15숨은설명끝]</span>';
                         if(식별코드==16) tmp+='<span>[16'+특수문자.정보.구분.replace(/\d\:/,'')+'시작]</span>'+문단읽기(1)+'<span>[16'+특수문자.정보.구분.replace(/\d\:/,'')+'끝]</span>';
                         if(식별코드==17) tmp+='\n<span>[17'+특수문자.정보.종류.replace(/\d[ ]\=[ ]/,'')+'시작]</span><label>'+문단읽기(1)+'</label><span>[17'+특수문자.정보.종류.replace(/\d[ ]\=[ ]/,'')+'끝]</span>\n';
@@ -1408,19 +1394,6 @@
                             console.groupEnd(); // console.group('캡션문단??')
                         }
                     }else{
-                        /*
-                        if(문단.글자모양포함){ // 개별 글자에 대한 스타일 지정시
-                            if(글자모양[i].flag==0){
-                                색상 = COLOR[ 글자모양[i].글자모양.글자색 ];
-                            }
-                        }else{ // 대표글자모양 참조
-                            색상 = COLOR[ 문단.대표글자모양.글자색 ];
-                        }
-                        // 기본값이면 채색하지 않음.
-                        if(색상!="#bbbbbb") ch=`<font color="${색상}">${ch}</font>`;
-
-                        tmp+=ch;
-                        */
                         tmp+=글자꾸미기(ch,i);
                     }
                 }
@@ -1432,18 +1405,6 @@
                     var _ch = getByte('hchar');
                     if(_ch == '더 읽을게 없습니다.') break;
                     _ch.replace(/</g,'&lt;'); // HTML TAG
-                    /*
-                    if(문단.글자모양포함){ // 개별 글자에 대한 스타일 지정시
-                        if(글자모양[i].flag==0){
-                            색상 = COLOR[ 글자모양[i].글자모양.글자색 ];
-                        }
-                    }else{ // 대표글자모양 참조
-                        색상 = COLOR[ 문단.대표글자모양.글자색 ];
-                    }
-                    // 기본값이면 채색하지 않음.
-                    if(색상!="#bbbbbb") _ch=`<font color="${색상}">${_ch}</font>`;
-                    tmp += _ch;
-                    */
                     tmp += 글자꾸미기(_ch,i);
                 }
                 if(DEBUG) console.log('tmp',tmp)
@@ -1487,9 +1448,29 @@
         if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
 
         GetByte.debug=false; // 데이타 추출부 디버깅 종료
+        var 추가정보블록
         if(GetByte.pos<GetByte.uInt8Array.length){
             if(DEBUG) console.log('추가블록읽기')
-            var 추가정보블록=추가정보();
+            if(그림파일들.length){
+                추가정보블록 = {};
+                그림파일들.forEach(item=>추가정보블록[item]=추가정보());
+                추가정보블록['추가정보']=추가정보();
+                //console.log(추가정보블록[그림파일들[0]].내용.toBase64())
+//                text += '<img src="data:image/png;base64,'
+//                text += '<img src="data:image/bmp;base64,'+추가정보블록[그림파일들[0]].내용.toBase64()+'">';
+//                imgtag = '<img src="data:image/bmp;base64,'+추가정보블록[그림파일들[0]].내용.toBase64()+'">';
+//                text = text.replace('imgtag'+그림파일들[0],imgtag);
+                // 그림이 첨부되었으면 테그변환시도
+                그림파일들.forEach(item=>{
+//                    var imgtag = '<img src="data:image/bmp;base64,'+추가정보블록[ item ].내용.toBase64()+'">';
+                    var ext = item.match(/(?:\.([^.]+))?$/)[1]; // 파일 확장명 추출 mime type 정의용
+                    var imgtag = '<img src="data:image/'+ext+';base64,'+추가정보블록[ item ].내용.toBase64()+'">';
+                    text = text.replace('imgtag'+item,imgtag);
+                });
+            } else {
+                추가정보블록=추가정보();
+            }
+
             if(DEBUG) console.info('추가정보블록',추가정보블록);
             HWP.추가정보블록 = 추가정보블록;
                 if(DEBUG) console.log('pos', GetByte.pos, GetByte.uInt8Array.length)
