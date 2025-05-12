@@ -60,6 +60,7 @@
 //    var COLOR = ['black', 'blue', 'green', '#01787c', 'red', 'purple', 'yellow', 'white'];
     var COLOR = ['#bbbbbb', '#0039a6', 'green', '#01787c', 'red', 'purple', 'yellow', 'white'];
     var 그림파일들=[] // HWP문서에 포함된 그림파일명들
+    var 미정의글자={기호:0,한자:0,계:function(){return this.기호+this.한자}};
 
     // HWP 파일에서 Text 추출하는 모듈
     function HWP(buffer){
@@ -970,7 +971,10 @@
                             if(info.정보.추가정보길이 > 0)
                                 info.정보.추가정보 = getByte('byte', info.정보.추가정보길이);
 
-                            if(info.정보.그림파일이름!='') 그림파일들.push(info.정보.그림파일이름);
+                            info.정보.그림종류설명 = ['0:외부 파일', '1:OLE Object', '2:Embedded Image', '3:Drawing Object'][info.정보.그림종류];
+                            // 포함이미지의 경우 이미지파일명 저장(추가정보블록에서 이미지 읽어오기위해 저장함.)
+                            //if(info.정보.그림파일이름!='') 그림파일들.push(info.정보.그림파일이름);
+                            if(info.정보.그림종류==2 && info.정보.그림파일이름!='') 그림파일들.push(info.정보.그림파일이름);
                             break;
                             // 이후 코드 버림 - 왜 안되지?????
 
@@ -1135,7 +1139,7 @@
                 case 5 : //  예약 정보
                         // 예약정보는 길이를 포함하지 않음.
                         break;
-                case 6 : //  예약 정보
+                case 6 : //  배경이미지정보
                         info.길이 = getByte('dword');
                         info.내용 = 배경이미지정보();
                         break;
@@ -1333,8 +1337,7 @@
                                     var r=''
                                     if     (o=='0:투명') r='1px #232323 dotted';
                                     else if(o=='1:실선') r='1px gray solid';
-                                    else if(o=='2:굵은 실선') r='1px #888888 solid';
-                                    else if(o=='3:점선') r='1px #444444 dotted';
+                                    else if(o=='3:점선') r='1px gray dotted';
                                     //else if(o=="4:2중 실선") r='3px gray double'; // 표현이 안됨
                                     else if(o=="4:2중 실선") r='1px gray solid'; // 
                                     return r;
@@ -1373,7 +1376,7 @@
                             tmp+=html;
                             console.groupEnd(); // console.group('식별코드10처리')
                         }
-                        if(식별코드==11) tmp+=`<span>[11그림${특수문자.정보.그림파일이름==''?'':'{'+특수문자.정보.그림파일이름+'}'}]</span>${특수문자.정보.그림파일이름==''?'':'imgtag'+특수문자.정보.그림파일이름}`;
+                        if(식별코드==11) tmp+=`<span>[11그림${특수문자.정보.그림파일이름==''?'':'{'+특수문자.정보.그림파일이름+'}'}]</span>${특수문자.정보.그림종류!=2?'':'imgtag'+특수문자.정보.그림파일이름}`;
                         if(식별코드==15) tmp+='<span>[15숨은설명시작]</span><label>'+문단읽기(1)+'</label><span>[15숨은설명끝]</span>';
                         if(식별코드==16) tmp+='<span>[16'+특수문자.정보.구분.replace(/\d\:/,'')+'시작]</span>'+문단읽기(1)+'<span>[16'+특수문자.정보.구분.replace(/\d\:/,'')+'끝]</span>';
                         if(식별코드==17) tmp+='\n<span>[17'+특수문자.정보.종류.replace(/\d[ ]\=[ ]/,'')+'시작]</span><label>'+문단읽기(1)+'</label><span>[17'+특수문자.정보.종류.replace(/\d[ ]\=[ ]/,'')+'끝]</span>\n';
@@ -1500,6 +1503,9 @@
         //var _add = GetByte.pos==GetByte.uInt8Array.length?'읽기완료':'읽기오류'
         //_add += `(${GetByte.pos.format()}/${GetByte.uInt8Array.length.format()} Byte)`;
         var _add = `(${GetByte.pos.format()}<span>/</span>${GetByte.uInt8Array.length.format()} Byte)`;
+        try{미정의글자.기호 = text.match(/\[[0-4][fabcde\d]{2,3}\:.{0,2}\]/g).length;}catch(e){}
+        try{미정의글자.한자 = text.match(/\[[5-9abcdef][fabcde\d]{3}\:.{0,2}\]/g).length;}catch(e){}
+        _add += ' ?기호'+미정의글자.기호+'+한자'+미정의글자.한자+':'+미정의글자.계().format();
 //        var _add = !!추가정보블록?'완료':'오류'
 //        var _add = readError?'오류':'완료'
         _add += 문서요약.출력용;
@@ -1514,7 +1520,6 @@
             }
         } 
         str_header+='<span>/</span>' +line.format()+'라인 ' +_add+ '<hr>'
-
         return str_header + text;
     }
 
@@ -1522,6 +1527,7 @@
     function 건너뜀(idx){
         console.debug('링크이동idx',idx)
         var 건너뛸파일이름 = HWP.추가정보블록.내용[idx].건너뛸파일이름;
+        try{ 건너뛸파일이름 = 건너뛸파일이름.replace(/\\/g,'/'); }catch(e){}
         var 건너뛸책갈피   = HWP.추가정보블록.내용[idx].건너뛸책갈피;
         console.debug(`추가정보블록.내용[${idx}].건너뛸파일이름`, 건너뛸파일이름);
         console.debug(`추가정보블록.내용[${idx}].건너뛸책갈피`, 건너뛸책갈피);
@@ -1539,13 +1545,18 @@
                 return;
             }
         }
+
+        건너뛸파일이름 = 건너뛸파일이름.replace('XBC-12.HWP','Xbc-12.hwp');
+        건너뛸파일이름 = 건너뛸파일이름.replace('XBC-13.HWP','Xbc-13.hwp');
+        건너뛸파일이름 = 건너뛸파일이름.replace('XBC-14.HWP','Xbc-14.hwp');
+
         // 건너뛸파일이름, 건너뛸책갈피 다 있으면 해당파일의 책갈피로 이동
         var arrFilepath = filepath.split('/');
         arrFilepath.pop();
         arrFilepath.push(건너뛸파일이름)
-        filepath = arrFilepath.join('/');
-        console.debug('filepath',filepath);
-        var file = `hwp.html?url=${encodeURIComponent(filepath)}#${건너뛸책갈피}`;
+        var fpath = arrFilepath.join('/');
+        console.debug('filepath',fpath);
+        var file = `hwp.html?url=${encodeURIComponent(fpath)}#${건너뛸책갈피}`;
         console.debug(file);
         location.href = file;
     }
