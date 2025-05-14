@@ -1458,14 +1458,8 @@
                 추가정보블록 = {};
                 그림파일들.forEach(item=>추가정보블록[item]=추가정보());
                 추가정보블록['추가정보']=추가정보();
-                //console.log(추가정보블록[그림파일들[0]].내용.toBase64())
-//                text += '<img src="data:image/png;base64,'
-//                text += '<img src="data:image/bmp;base64,'+추가정보블록[그림파일들[0]].내용.toBase64()+'">';
-//                imgtag = '<img src="data:image/bmp;base64,'+추가정보블록[그림파일들[0]].내용.toBase64()+'">';
-//                text = text.replace('imgtag'+그림파일들[0],imgtag);
                 // 그림이 첨부되었으면 테그변환시도
                 그림파일들.forEach(item=>{
-//                    var imgtag = '<img src="data:image/bmp;base64,'+추가정보블록[ item ].내용.toBase64()+'">';
                     var ext = item.match(/(?:\.([^.]+))?$/)[1]; // 파일 확장명 추출 mime type 정의용
                     var imgtag = '<img src="data:image/'+ext+';base64,'+추가정보블록[ item ].내용.toBase64()+'">';
                     text = text.replace('imgtag'+item,imgtag);
@@ -1499,18 +1493,16 @@
 
 
 
-        //HWP 문서정보
-        //var _add = GetByte.pos==GetByte.uInt8Array.length?'읽기완료':'읽기오류'
-        //_add += `(${GetByte.pos.format()}/${GetByte.uInt8Array.length.format()} Byte)`;
-        var _add = `(${GetByte.pos.format()}<span>/</span>${GetByte.uInt8Array.length.format()} Byte)`;
+        //HWP V2.0 V2.1 V3.0 문서정보
         try{미정의글자.기호 = text.match(/\[[0-4][fabcde\d]{2,3}\:.{0,2}\]/g).length;}catch(e){}
         try{미정의글자.한자 = text.match(/\[[5-9abcdef][fabcde\d]{3}\:.{0,2}\]/g).length;}catch(e){}
-        _add += ' ?기호'+미정의글자.기호+'+한자'+미정의글자.한자+':'+미정의글자.계().format();
-//        var _add = !!추가정보블록?'완료':'오류'
-//        var _add = readError?'오류':'완료'
+        str_header = filepath.split('/').pop();
+        str_header += ' ?기호'+미정의글자.기호+'+한자'+미정의글자.한자+':'+미정의글자.계().format();
+        str_header += '\n[HWP Document File V' + headerString.version + '] 문서';
+        var _add = `(${GetByte.pos.format()}<span>/</span>${GetByte.uInt8Array.length.format()} Byte)`;
         _add += 문서요약.출력용;
-        if(정보블럭){
-            if(정보블럭.ID==1){
+        if(정보블럭){ // 정보블럭이 있을때
+            if(정보블럭.ID==1){ // 정보블럭 ID 1 (하이퍼텍스트) 인 경우
                 _add += '\n<select name="책갈피" onChange="책갈피이동(this)">';
                 _add +=   '<option value="" selected>책갈피선택';
                 for(var i=0; i<정보블럭.내용.length; i++){
@@ -1546,6 +1538,7 @@
             }
         }
 
+        // 문서상 파일명과 실제 파일명의 대소문자가 다름을 보정함.
         건너뛸파일이름 = 건너뛸파일이름.replace('XBC-12.HWP','Xbc-12.hwp');
         건너뛸파일이름 = 건너뛸파일이름.replace('XBC-13.HWP','Xbc-13.hwp');
         건너뛸파일이름 = 건너뛸파일이름.replace('XBC-14.HWP','Xbc-14.hwp');
@@ -1620,6 +1613,15 @@ function h(h,l){ // 문자값 알기
 
     return ch
 }
+var sIdx = 0;
+function s(){
+    var dupArr = hwp.innerText.match(/\[[fabcde\d]{4}\:.{0,2}\]{0,1}/g);
+    const set = new Set(dupArr);
+    const uniqueArr = [...set];
+    var total = uniqueArr.length-1;
+    return `${sIdx}/${total}/${uniqueArr[sIdx++]}`;
+};
+
 //// 디버깅용
 
     // 
