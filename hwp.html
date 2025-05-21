@@ -423,7 +423,7 @@
             var info = {
                  크기    :getByte('hunit') // 글자의 크기
                 ,글꼴    :getByteArray('byte',lengTypes) // 각 언어별 글꼴 인덱스(표 34 참조)
-                ,글꼴    :getByteArray('byte',lengTypes) // 각 언어별 장평 비율, 50% ～ 200%(표 34 참조)
+                ,장평    :getByteArray('byte',lengTypes) // 각 언어별 장평 비율, 50% ～ 200%(표 34 참조)
                 ,자간    :getByteArray('byte',lengTypes) // 각 언어별 자간 비율, -50% ～ 50%(표 34 참조)
                 ,음영색  :getByte('byte') // 0 ～ 7, 메뉴 순서 대로 *
                 ,음영색설명:null
@@ -1277,10 +1277,7 @@
                         readError=true;
                         return tmp; // offset 초과시 강제종료
                     }
-//                    var 식별코드 = GetByte.getPos();
-//                    var 식별코드 = GetByte.uInt8Array[GetByte.pos];
                     var 식별코드 = GetByte.uInt8Array[GetByte.pos+1]<<8|GetByte.uInt8Array[GetByte.pos];
-//                    var 식별코드 = GetByte.uInt8Array[GetByte.pos+1]+GetByte.uInt8Array[GetByte.pos];
 //                    console.log('pos',GetByte.pos,'식별코드',GetByte.uInt8Array[GetByte.pos],GetByte.uInt8Array[GetByte.pos+1],GetByte.uInt8Array[GetByte.pos]+GetByte.uInt8Array[GetByte.pos+1])
                     var ch = getByte('hchar');
                     if(DEBUG)
@@ -1621,7 +1618,6 @@ function s(){
     var total = uniqueArr.length-1;
     return `${sIdx}/${total}/${uniqueArr[sIdx++]}`;
 };
-
 //// 디버깅용
 
     // 
