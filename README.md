@@ -34,3 +34,12 @@
   - 프리젠테이션설정정보 등 이외 설정은 의미 파악이 어려워 강제 스킵함.
   - 추가정보블럭#2 영역은 패스함.(때문에 바이트수가 다 읽히지 않은 경우가 존재함.)
 
+# 이미지
+- 문서정보
+  > ![hwp01](https://github.com/Hyunee7/HWP2TEXT.js/blob/main/images/HWP01.jpg?raw=true)
+- 이미지포함 본문
+  > ![hwp02](https://github.com/Hyunee7/HWP2TEXT.js/blob/main/images/HWP02.jpg?raw=true)
+- 책갈피&하이퍼링크 처리
+  > ![hwp04](https://github.com/Hyunee7/HWP2TEXT.js/blob/main/images/HWP04.jpg?raw=true)
+- 글자색 속성 적용
+  > ![hwp05](https://github.com/Hyunee7/HWP2TEXT.js/blob/main/images/HWP05.jpg?raw=true)
