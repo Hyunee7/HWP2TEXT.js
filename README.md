@@ -43,3 +43,5 @@
   > ![hwp04](https://github.com/Hyunee7/HWP2TEXT.js/blob/main/images/HWP04.jpg?raw=true)
 - 글자색 속성 적용
   > ![hwp05](https://github.com/Hyunee7/HWP2TEXT.js/blob/main/images/HWP05.jpg?raw=true)
+- 표 처리
+  > ![hwp06](https://github.com/Hyunee7/HWP2TEXT.js/blob/main/images/HWP06.jpg?raw=true)
