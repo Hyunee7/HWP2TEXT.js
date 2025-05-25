@@ -37,6 +37,7 @@
   <script>
     // 숫자 세자리 컴마
     Number.prototype.format = function(){return new String(this).replace(/\B(?<!\.\d*)(?=(\d{3})+(?!\d))/g, ",")}
+    String.prototype.format = function(){return (+this).format()}
     Array.prototype.getStr = function(){return this.slice(0,this.indexOf('')).join('');} // null 이전까지 배열값 문자열로 합침
     Array.prototype.toBase64 = function(){
         var binary = '';

@@ -27,10 +27,10 @@
         var 용지종류=['0:사용자 정의','1:프린트 80','2:프린트 132','3:A4'
                      ,'4:레터','5:B5','6:B4','7:리갈','8:A3'];
         HWP.용지종류 = 용지종류;
-        var HWP1X = false;
+        var HWP1X = false; // 문서포멧 V1.X 문서여부
         HWP.HWP1X = HWP1X;
         function FileHeader(hs){ // 128 Byte 문서정보
-            HWP1X = hs.version.charAt(0)=='1';
+            HWP1X = hs.version.charAt(0)=='1'; // 문서포멧 V1.X 문서여부
             HWP.HWP1X = HWP1X;
             return {
                  커서줄     : getByte( 2, 'int16') // 문서를 저장할 당시 커서가 위치한 문단 번호
@@ -108,8 +108,9 @@
             console.log('fileHeader', fileHeader) // 파일헤더정보(문서정보)
         if(DEBUG) console.log('GetByte.pos', GetByte.pos)
 
-
-        function HWP1XRead(){  // HWP V1.x 용 문서 읽기
+        // HWP V1.x 용 문서 읽기 
+        // 통신풀그림 누리에(NURIE) V1.6 소스 중 hwp.c 를 변환함
+        function HWP1XRead(){  
             function TextHeader(){ // 20 Byte 
                 return {
                     num1 : getByte( 1, 'int8') 
@@ -158,6 +159,8 @@
             str_header+=' <span>/</span> ' +line.format()+'라인 ' +_add+ ''
             return str_header + '<hr>' + text;  // 1.x 용문서이면 읽어서 반환함 이후 취소
         }
+
+
 
         function 문서요약정보(){ // 1008 Byte
             var info = {
@@ -233,7 +236,7 @@
         }
         if(DEBUG) console.log('fileHeader.압축', fileHeader.압축)
 
-        if(fileHeader.압축){
+        if(fileHeader.압축){ // 압축문서의 경우 압축해제 시도(외부모듈{pako} 이용)
             try{
                 var data = GetByte.uInt8Array.slice(GetByte.pos, GetByte.uInt8Array.length);
                 content = pako.inflate(data, { windowBits: -15 }); //압축되어있어 풀어줘야함
@@ -780,7 +783,7 @@
                      ,정보         :[]}
             }
             switch(식별코드){
-                case  5 : info.정보 = {    // 필드 코드   46 + n Byte
+                case  5 : /*info.정보 = {    // 필드 코드   46 + n Byte
                                  종류:getByte('byte',2) // 2/0 = 계산식
                                                         // 3/0 = 문서요약
                                                         // 3/1 = 개인정보
@@ -788,7 +791,7 @@
                                                         // 4/0 = 누름틀
                                 ,예약1:getByte('byte',4) //
                                 ,위치정보:getByte('word') // 0 = 끝 코드, 1 = 시작 코드
-                                ,예약2:getByte('22')
+                                ,예약2:getByte('byte',22)
                                 ,문자열1길이:getByte('dword') // hchar문자열 데이터 #1의 길이 - (필드이름) / \x0 포함
                                 ,문자열2길이:getByte('dword') // hchar문자열 데이터 #2의 길이 - 입력란안내문 / \x0 포함
                                 ,문자열3길이:getByte('dword') // hchar문자열 데이터 #3의 길이 - 상황선도움말 / \x0 포함
@@ -797,7 +800,8 @@
                                            // 길이 + 바이너리 데이터의 길이
                                            // 세부 파싱정보는 아직 넣지 않음.
                             }
-                            info.정보.데이터 = getByte('byte', info.정보.바이너리데이터길이);
+                            info.정보.데이터 = getByte('byte', info.정보.바이너리데이터길이);*/
+                            info.정보 = getByte('byte', info.정보길이); // 정보길이와 정보구조체와 맞지가  않아 그냥 스킵함.
                             break;
                 case  6 : // 책갈피 42 Byte - info.정보길이:34 / 2025-03-23
 //                          info.책갈피이름=getByte('hchar',16).join('');
@@ -890,7 +894,8 @@
                                                // 그 외는 하이퍼텍스트 정보 (11.1 참고)
                             }
                             if(info.정보.그림종류==67) {
-                              info.정보.보정 = getByteArray('byte',9);//  break;// 이게 왜 필요한걸까??????
+                              info.정보.보정 = getByteArray('byte',9);  // 이게 왜 필요한걸까??????
+                              break;
                             }
                             if(_fn == 'IQ문제은행.hwp'){ // V2.1 문서 보정
                                 info.정보.보정 = getByteArray('byte',52);//  break;// 이게 왜 필요한걸까??????
@@ -1262,6 +1267,7 @@
                                     var r=''
                                     if     (o=='0:투명') r='1px #232323 dotted';
                                     else if(o=='1:실선') r='1px gray solid';
+//                                    else if(o=='2:굵은 실선') r='1px #888888 solid';
                                     else if(o=='3:점선') r='1px gray dotted';
                                     //else if(o=="4:2중 실선") r='3px gray double'; // 표현이 안됨
                                     else if(o=="4:2중 실선") r='1px gray solid'; // 
